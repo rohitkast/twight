@@ -1,0 +1,2 @@
+this is a chrome extension that helps in reddit marketing/finding clients by helping users reply, engage, comment, and DM 
+in a natural way so as to interact with users without sounding like you are sellign them. it helps finding potential customers in the comment section as well as drafts replies, DMs, and comments for you.

@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="goals.css" />
+  </head>
+  <body>
+    <h1>Goals</h1>
+    <p class="sub">
+      Goals tell Claude what you're trying to achieve on each thread — marketing an app,
+      finding feedback clients, etc. Switch goals from the side panel like changing a chat model.
+    </p>
+
+    <div id="goal-list"></div>
+
+    <hr />
+
+    <h2 id="form-title">Add a goal</h2>
+
+    <label for="goal-name">Name</label>
+    <input id="goal-name" type="text" placeholder="e.g. Market my SaaS app" />
+
+    <label for="goal-desc">Description</label>
+    <textarea id="goal-desc" rows="4"
+      placeholder="e.g. I'm building a tool for indie developers. Help me find people who'd genuinely benefit from it and craft replies that feel authentic, not promotional."></textarea>
+
+    <div class="form-actions">
+      <button id="goal-save">Add goal</button>
+    </div>
+    <p id="status"></p>
+
+    <script src="goals.js"></script>
+  </body>
+</html>

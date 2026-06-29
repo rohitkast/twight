@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <h1>Reddit Reply Assistant — Settings</h1>
+
+    <label for="key">Anthropic API key</label>
+    <input id="key" type="password" placeholder="sk-ant-..." autocomplete="off" />
+
+    <button id="save">Save</button>
+    <p id="status" class="muted"></p>
+
+    <p class="note">
+      Your key is stored in this browser's extension storage
+      (<code>chrome.storage.local</code>) and is sent only to
+      <code>api.anthropic.com</code>. Don't use this build if you plan to
+      distribute the extension — the key would ship with it.
+    </p>
+
+    <script src="options.js"></script>
+  </body>
+</html>

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="sidepanel.css" />
+  </head>
+  <body>
+    <header>
+      <span class="title">Reddit Reply Assistant</span>
+      <button id="settings" title="Settings" aria-label="Settings">⚙</button>
+    </header>
+
+    <section id="context">
+      <div id="goal-bar">
+        <select id="goal-select" aria-label="Active goal"></select>
+        <button id="manage-goals" title="Add / manage goals" aria-label="Manage goals">+</button>
+      </div>
+      <div id="load-bar">
+        <button id="load">Load thread from page</button>
+        <button id="clear" title="Clear chat and reset thread">Clear</button>
+      </div>
+      <div id="thread-summary" class="muted">No thread loaded.</div>
+    </section>
+
+    <main id="chat"></main>
+
+    <footer>
+      <textarea
+        id="input"
+        rows="3"
+        placeholder="e.g. Draft a friendly reply to u/someuser — or write a DM inviting them to collaborate. (Ctrl/Cmd+Enter to send)"
+      ></textarea>
+      <button id="send">Send</button>
+    </footer>
+
+    <script src="sidepanel.js"></script>
+  </body>
+</html>
