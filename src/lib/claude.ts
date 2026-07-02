@@ -1,11 +1,18 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { RedditThread, Goal } from "./types";
 
-export const MODEL = "claude-opus-4-8";
+export const MODEL = "claude-sonnet-4-5";
 
 export interface ChatTurn {
   role: "user" | "assistant";
   content: string;
+}
+
+export interface PromptContext {
+  summary?: string;
+  includeRawThread?: boolean;
+  requestThreadSummary?: boolean;
+  includeComments?: boolean;
 }
 
 export function getClient(apiKey: string): Anthropic {
@@ -15,9 +22,48 @@ export function getClient(apiKey: string): Anthropic {
 }
 
 // Input token budget: truncate aggressively to keep prompt small across turns.
-const MAX_COMMENT_CHARS = 400;
-const MAX_COMMENTS = 60;
-const MAX_HISTORY_TURNS = 8; // 4 exchanges kept in each API call
+const MAX_COMMENT_CHARS = 300;
+const MAX_COMMENTS = 16;
+const MAX_HISTORY_TURNS = 6; // 3 exchanges kept in each API call
+const MAX_SUMMARY_CHARS = 1200;
+
+const STOP_WORDS = new Set([
+  "the",
+  "and",
+  "for",
+  "that",
+  "with",
+  "this",
+  "from",
+  "have",
+  "what",
+  "your",
+  "just",
+  "they",
+  "them",
+  "into",
+  "about",
+  "would",
+  "there",
+  "could",
+  "should",
+  "where",
+  "when",
+  "which",
+  "also",
+  "been",
+  "were",
+  "will",
+  "some",
+  "than",
+  "then",
+  "their",
+  "need",
+  "want",
+  "like",
+  "make",
+  "help",
+]);
 
 const BASE_SYSTEM = `You help craft tailored Reddit replies and DMs.
 Given a Reddit thread:
@@ -26,23 +72,105 @@ Given a Reddit thread:
 - Give the draft directly. Ask one clarifying question only if truly ambiguous.
 - Never invent facts beyond what is provided.`;
 
+function appendOutputContract(parts: string[], requestThreadSummary: boolean): void {
+  parts.push(
+    "",
+    "Output contract:",
+    `Emit each draft in its own frame using ${"<ITEM>"}JSON${"</ITEM>"}.`,
+    "JSON fields: kind (dm|reply|comment), targetUser (string or null), title, text, rationale.",
+    "Emit 1-6 items. No markdown code fences.",
+  );
+
+  if (requestThreadSummary) {
+    parts.push(
+      "",
+      "After all ITEM frames, append a concise thread summary for future turns in this exact format:",
+      "<THREAD_SUMMARY>",
+      "2-6 bullet points capturing core problem, key commenters, objections, and best outreach angle.",
+      "</THREAD_SUMMARY>",
+      "Keep this summary under 900 characters.",
+    );
+  }
+}
+
 function truncate(s: string, max: number): string {
   return s.length > max ? s.slice(0, max) + "…" : s;
 }
 
-export function buildSystemPrompt(thread: RedditThread | null, goal: Goal | null = null): string {
+function keywordSet(text: string): Set<string> {
+  const words = (text.toLowerCase().match(/[a-z0-9]{3,}/g) ?? []).filter((w) => !STOP_WORDS.has(w));
+  return new Set(words);
+}
+
+function scoreCommentForQuery(body: string, queryWords: Set<string>): number {
+  if (!queryWords.size) return 0;
+  const bodyWords = keywordSet(body);
+  let overlap = 0;
+  for (const w of queryWords) {
+    if (bodyWords.has(w)) overlap += 1;
+  }
+  return overlap;
+}
+
+export function buildSystemPrompt(
+  thread: RedditThread | null,
+  goal: Goal | null = null,
+  latestUserMessage = "",
+  context: PromptContext = {},
+): string {
+  const {
+    summary = "",
+    includeRawThread = true,
+    requestThreadSummary = false,
+    includeComments = true,
+  } = context;
+
   const goalSection = goal ? `# Goal\n${goal.name}: ${goal.description}` : null;
+
+  if (!thread && !summary.trim()) {
+    const parts = [BASE_SYSTEM];
+    if (goalSection) parts.push("", goalSection);
+    parts.push('\nNo thread loaded. Ask the user to click "Load thread from page".');
+    appendOutputContract(parts, requestThreadSummary);
+    return parts.join("\n");
+  }
+
+  if (!includeRawThread && summary.trim()) {
+    const parts = [BASE_SYSTEM];
+    if (goalSection) parts.push("", goalSection);
+    parts.push(
+      "",
+      "# Thread summary",
+      truncate(summary.trim(), MAX_SUMMARY_CHARS),
+      "",
+      "Use only this summary as thread context. Do not ask for raw post/comments unless essential.",
+    );
+    appendOutputContract(parts, requestThreadSummary);
+    return parts.join("\n");
+  }
 
   if (!thread) {
     const parts = [BASE_SYSTEM];
     if (goalSection) parts.push("", goalSection);
-    parts.push('\nNo thread loaded. Ask the user to click "Load thread from page".');
+    parts.push("", "# Thread summary", truncate(summary.trim(), MAX_SUMMARY_CHARS));
+    appendOutputContract(parts, requestThreadSummary);
     return parts.join("\n");
   }
 
-  // Prefer shallower comments (more useful context) and cap total count
-  const sorted = [...thread.comments].sort((a, b) => a.depth - b.depth);
-  const selected = sorted.slice(0, MAX_COMMENTS);
+  const queryWords = keywordSet(latestUserMessage);
+  const ranked = thread.comments
+    .map((c, i) => ({
+      c,
+      i,
+      score: scoreCommentForQuery(c.body, queryWords),
+    }))
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      if (a.c.depth !== b.c.depth) return a.c.depth - b.c.depth;
+      return a.i - b.i;
+    });
+
+  const selected = ranked.slice(0, MAX_COMMENTS).map((x) => x.c);
 
   const comments = selected
     .map((c) => {
@@ -60,12 +188,26 @@ export function buildSystemPrompt(thread: RedditThread | null, goal: Goal | null
     `Sub: ${thread.subreddit || "?"}  OP: u/${thread.author || "?"}`,
     `Title: ${thread.title || "(untitled)"}`,
   );
-  if (thread.body) parts.push(`Body: ${truncate(thread.body, 800)}`);
-  parts.push(
-    "",
-    `Comments (${selected.length}${sorted.length > MAX_COMMENTS ? ` of ${sorted.length}, shallower first` : ""}):`,
-    comments || "(none captured)",
-  );
+  if (thread.body) parts.push(`Body: ${truncate(thread.body, 500)}`);
+  if (summary.trim()) {
+    parts.push("", "# Conversation summary", truncate(summary.trim(), MAX_SUMMARY_CHARS));
+  }
+  if (includeComments) {
+    parts.push(
+      "",
+      `Comments (${selected.length} of ${thread.comments.length}, relevance-ranked):`,
+      comments || "(none captured)",
+    );
+  } else {
+    parts.push(
+      "",
+      "Comments are intentionally excluded for this request.",
+      "Focus on drafting direct outreach/DM copy to the post author based on post title/body and conversation context only.",
+      "Do not draft or suggest public comment replies unless the user explicitly asks to re-enable comments.",
+    );
+  }
+
+  appendOutputContract(parts, requestThreadSummary);
 
   return parts.join("\n");
 }
@@ -83,9 +225,8 @@ export async function* streamReply(
 
   const stream = client.messages.stream({
     model: MODEL,
-    max_tokens: 4096,
-    thinking: { type: "adaptive" },
-    system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
+    max_tokens: 1400,
+    system: [{ type: "text", text: system, cache_control: { type: "ephemeral" as const } }],
     messages: trimmed.map((t) => ({ role: t.role, content: t.content })),
   });
 

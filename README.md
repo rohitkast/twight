@@ -20,7 +20,9 @@ browser's extension storage. This is fine for personal use; do **not** publish
 this build, as the key would travel with the extension. (Swap `lib/claude.ts` to
 hit a backend proxy if you ever need to distribute it.)
 
-Model: `claude-opus-4-8` with adaptive thinking, streamed into the chat.
+Model: `claude-sonnet-4-5` streamed into the chat.
+Thinking: disabled for compatibility with the default model.
+Context: sends a relevance-ranked subset of comments plus a compact rolling conversation summary.
 
 ## Build
 

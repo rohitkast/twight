@@ -1,25 +1,450 @@
 import { getClient, buildSystemPrompt, streamReply, type ChatTurn } from "./lib/claude";
 import type { RedditThread, ExtractResponse, Goal } from "./lib/types";
+import { marked } from "marked";
+
+// ---- Module-level state ----
 
 let thread: RedditThread | null = null;
 let activeGoal: Goal | null = null;
 let hasLoaded = false;
-const history: ChatTurn[] = [];
+
+type DraftKind = "dm" | "reply" | "comment";
+
+interface StructuredDraft {
+  kind: DraftKind;
+  targetUser: string | null;
+  title: string;
+  text: string;
+  rationale: string;
+}
+
+/** A saved turn with optional structured drafts for faithful history replay. */
+type ConversationTurn = ChatTurn & {
+  structuredDrafts?: StructuredDraft[];
+  structuredRemainder?: string;
+};
+
+const history: ConversationTurn[] = [];
+let conversationSummary = "";
+let threadSummary = "";
+
+const MAX_SUMMARY_CHARS = 1200;
+const CHAT_HISTORY_KEY = "chatHistoryByPost";
+const MAX_HISTORY_ITEMS = 100;
+const INCLUDE_COMMENTS_KEY = "includeCommentsInDrafts";
+const ITEM_OPEN = "<ITEM>";
+const ITEM_CLOSE = "</ITEM>";
+
+interface SavedConversation {
+  postKey: string;
+  title: string;
+  subreddit: string;
+  author: string;
+  url: string;
+  commentsCount: number;
+  turns: ConversationTurn[];
+  summary: string;
+  threadSummary?: string;
+  updatedAt: number;
+}
+
+type SavedConversationMap = Record<string, SavedConversation>;
+
+const ALLOWED_MD_TAGS = new Set([
+  "a", "p", "br", "strong", "em", "code", "pre",
+  "ul", "ol", "li", "blockquote",
+  "h1", "h2", "h3", "h4", "h5", "h6", "hr",
+]);
+
+const ALLOWED_ATTRS: Record<string, Set<string>> = {
+  a: new Set(["href", "title", "target", "rel"]),
+};
+
+marked.setOptions({ gfm: true, breaks: true });
+
+// ---- Pure helpers ----
+
+function truncate(s: string, max: number): string {
+  return s.length > max ? s.slice(0, max) + "\u2026" : s;
+}
 
 function escapeHtml(s: string): string {
-  return s.replace(
-    /[&<>"]/g,
-    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!,
-  );
+  return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
+}
+
+function sanitizeMarkdownHtml(rawHtml: string): string {
+  const doc = new DOMParser().parseFromString(`<div>${rawHtml}</div>`, "text/html");
+  const root = doc.body.firstElementChild as HTMLElement;
+  for (const el of Array.from(root.querySelectorAll("*"))) {
+    const tag = el.tagName.toLowerCase();
+    if (!ALLOWED_MD_TAGS.has(tag)) { el.replaceWith(...Array.from(el.childNodes)); continue; }
+    const allowed = ALLOWED_ATTRS[tag] ?? new Set<string>();
+    for (const attr of Array.from(el.attributes)) {
+      if (!allowed.has(attr.name)) el.removeAttribute(attr.name);
+    }
+    if (tag === "a") {
+      const href = el.getAttribute("href") ?? "";
+      if (!/^(https?:|mailto:)/i.test(href)) {
+        el.removeAttribute("href");
+      } else {
+        el.setAttribute("target", "_blank");
+        el.setAttribute("rel", "noopener noreferrer");
+      }
+    }
+  }
+  return root.innerHTML;
+}
+
+function renderMarkdown(content: string): string {
+  return sanitizeMarkdownHtml(marked.parse(content) as string);
+}
+
+function truncateConversationSummary(userMessage: string, assistantMessage: string): void {
+  const nextLine = `U: ${truncate(userMessage, 180)}\nA: ${truncate(assistantMessage, 260)}`;
+  conversationSummary = conversationSummary ? `${conversationSummary}\n${nextLine}` : nextLine;
+  if (conversationSummary.length > MAX_SUMMARY_CHARS) {
+    conversationSummary = `...\n${conversationSummary.slice(conversationSummary.length - MAX_SUMMARY_CHARS)}`;
+  }
+}
+
+function parseThreadSummaryBlock(text: string): { visibleText: string; extractedSummary: string } {
+  const s = text.indexOf("<THREAD_SUMMARY>");
+  if (s === -1) return { visibleText: text, extractedSummary: "" };
+  const before = text.slice(0, s).trimEnd();
+  const e = text.indexOf("</THREAD_SUMMARY>", s + 16);
+  if (e === -1) return { visibleText: before, extractedSummary: "" };
+  const summaryText = text.slice(s + 16, e).trim();
+  const after = text.slice(e + 17).trim();
+  return { visibleText: [before, after].filter(Boolean).join("\n\n").trim(), extractedSummary: summaryText };
+}
+
+function draftKindLabel(kind: DraftKind): string {
+  if (kind === "dm") return "DM";
+  if (kind === "reply") return "Reply";
+  return "Comment";
+}
+
+function normalizeHumanPunctuation(value: string): string {
+  return value
+    .replace(/\s*[\u2014\u2013]\s*/g, ", ")
+    .replace(/\s+--\s+/g, ", ")
+    .replace(/\s+,/g, ",")
+    .replace(/,\s*,+/g, ",")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+function sanitizeTargetUser(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const clean = value.trim().replace(/^u\//i, "").replace(/[^a-zA-Z0-9_-]/g, "");
+  return clean || null;
+}
+
+function normalizeStructuredDraft(raw: unknown): StructuredDraft | null {
+  if (!raw || typeof raw !== "object") return null;
+  const obj = raw as Record<string, unknown>;
+  const kindRaw = String(obj.kind ?? "").toLowerCase();
+  if (kindRaw !== "dm" && kindRaw !== "reply" && kindRaw !== "comment") return null;
+  const text = typeof obj.text === "string" ? normalizeHumanPunctuation(obj.text) : "";
+  if (!text) return null;
+  const title = typeof obj.title === "string" ? normalizeHumanPunctuation(obj.title) : "";
+  const rationale = typeof obj.rationale === "string" ? normalizeHumanPunctuation(obj.rationale) : "";
+  return {
+    kind: kindRaw,
+    targetUser: sanitizeTargetUser(obj.targetUser),
+    title: title || `${draftKindLabel(kindRaw)} draft`,
+    text,
+    rationale,
+  };
+}
+
+function parseStructuredDrafts(text: string): {
+  drafts: StructuredDraft[]; remainder: string; hasPartialFrame: boolean;
+} {
+  const drafts: StructuredDraft[] = [];
+  let cursor = 0;
+  let remainder = "";
+  while (cursor < text.length) {
+    const start = text.indexOf(ITEM_OPEN, cursor);
+    if (start === -1) { remainder += text.slice(cursor); break; }
+    remainder += text.slice(cursor, start);
+    const end = text.indexOf(ITEM_CLOSE, start + ITEM_OPEN.length);
+    if (end === -1) return { drafts, remainder: remainder + text.slice(start), hasPartialFrame: true };
+    const payload = text.slice(start + ITEM_OPEN.length, end).trim();
+    try {
+      const draft = normalizeStructuredDraft(JSON.parse(payload));
+      if (draft) drafts.push(draft);
+    } catch { remainder += `${text.slice(start, end + ITEM_CLOSE.length)}\n`; }
+    cursor = end + ITEM_CLOSE.length;
+  }
+  return { drafts, remainder: remainder.trim(), hasPartialFrame: false };
+}
+
+function serializeDraftsForHistory(drafts: StructuredDraft[], remainder: string): string {
+  const blocks = drafts.map((d) => {
+    const target = d.targetUser ? ` to u/${d.targetUser}` : "";
+    const rationale = d.rationale ? `\nReason: ${d.rationale}` : "";
+    return `### ${draftKindLabel(d.kind)}${target}\n${d.text}${rationale}`;
+  });
+  if (remainder.trim()) blocks.push(remainder.trim());
+  return blocks.join("\n\n").trim();
+}
+
+function firstSentencePreview(text: string, max = 120): string {
+  const clean = text.replace(/\s+/g, " ").trim();
+  const i = clean.search(/[.!?](\s|$)/);
+  return truncate(i >= 0 ? clean.slice(0, i + 1) : clean, max);
+}
+
+function fallbackThreadSummary(t: RedditThread): string {
+  const topComments = t.comments.slice(0, 5).map((c) => `- u/${c.author}: ${truncate(c.body, 120)}`).join("\n");
+  return [
+    `Subreddit: ${t.subreddit || "?"}`,
+    `Post author: u/${t.author || "?"}`,
+    `Title: ${truncate(t.title || "(untitled)", 220)}`,
+    t.body ? `Body: ${truncate(t.body, 320)}` : "",
+    `Top comments (${Math.min(t.comments.length, 5)} of ${t.comments.length}):`,
+    topComments || "- none captured",
+  ].filter(Boolean).join("\n");
 }
 
 async function trySendMessage(tabId: number): Promise<ExtractResponse | null> {
-  try {
-    return (await chrome.tabs.sendMessage(tabId, { type: "EXTRACT_THREAD" })) as ExtractResponse;
-  } catch {
-    return null;
-  }
+  try { return (await chrome.tabs.sendMessage(tabId, { type: "EXTRACT_THREAD" })) as ExtractResponse; }
+  catch { return null; }
 }
+
+function getPostKey(t: RedditThread | null): string | null {
+  if (!t) return null;
+  return t.url || `${t.subreddit}|${t.author}|${t.title}`;
+}
+
+async function getSavedConversationMap(): Promise<SavedConversationMap> {
+  const { [CHAT_HISTORY_KEY]: raw = {} } = (await chrome.storage.local.get(CHAT_HISTORY_KEY)) as { [CHAT_HISTORY_KEY]?: SavedConversationMap };
+  return raw;
+}
+
+async function setSavedConversationMap(map: SavedConversationMap): Promise<void> {
+  await chrome.storage.local.set({ [CHAT_HISTORY_KEY]: map });
+}
+
+async function saveCurrentConversation(): Promise<void> {
+  const postKey = getPostKey(thread);
+  if (!postKey || history.length === 0 || !thread) return;
+  const map = await getSavedConversationMap();
+  map[postKey] = {
+    postKey,
+    title: thread.title || "(untitled)",
+    subreddit: thread.subreddit || "?",
+    author: thread.author || "?",
+    url: thread.url || "",
+    commentsCount: thread.comments.length,
+    turns: history.slice(),
+    summary: conversationSummary,
+    threadSummary,
+    updatedAt: Date.now(),
+  };
+  const entries = Object.values(map).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, MAX_HISTORY_ITEMS);
+  const trimmed: SavedConversationMap = {};
+  for (const item of entries) trimmed[item.postKey] = item;
+  await setSavedConversationMap(trimmed);
+}
+
+// ---- UI rendering helpers ----
+
+async function copyTextWithFeedback(btn: HTMLButtonElement, text: string): Promise<void> {
+  const original = btn.textContent;
+  try { await navigator.clipboard.writeText(text); btn.textContent = "Copied"; }
+  catch { btn.textContent = "Failed"; }
+  finally { window.setTimeout(() => { btn.textContent = original; }, 1200); }
+}
+
+function renderThinkingState(bubble: HTMLElement): void {
+  bubble.classList.add("structured", "thinking");
+  bubble.innerHTML =
+    `<div class="thinking-row">` +
+    `<span class="thinking-label">Generating drafts</span>` +
+    `<span class="thinking-dots" aria-hidden="true"><i></i><i></i><i></i></span>` +
+    `</div>`;
+}
+
+/**
+ * Renders a list of StructuredDraft objects as cards inside bubble.
+ * Used both during streaming (live) and when replaying saved history.
+ */
+function renderDraftFeed(
+  bubble: HTMLElement,
+  drafts: StructuredDraft[],
+  remainder: string,
+  hasPartialFrame: boolean,
+): void {
+  bubble.classList.add("structured");
+  bubble.classList.remove("thinking");
+  bubble.innerHTML = "";
+
+  const feed = document.createElement("div");
+  feed.className = "draft-feed";
+
+  for (const draft of drafts) {
+    const card = document.createElement("article");
+    card.className = `draft-card ${draft.kind} collapsed`;
+
+    const head = document.createElement("div");
+    head.className = "draft-head";
+
+    const toggleBtn = document.createElement("button");
+    toggleBtn.type = "button";
+    toggleBtn.className = "draft-toggle";
+    toggleBtn.textContent = "\u25B8";
+    toggleBtn.setAttribute("aria-label", "Expand draft");
+    toggleBtn.setAttribute("aria-expanded", "false");
+    head.appendChild(toggleBtn);
+
+    const badge = document.createElement("span");
+    badge.className = `draft-badge ${draft.kind}`;
+    badge.textContent = draftKindLabel(draft.kind);
+    head.appendChild(badge);
+
+    const titleEl = document.createElement("div");
+    titleEl.className = "draft-title";
+    titleEl.textContent = draft.title;
+    head.appendChild(titleEl);
+
+    if (draft.targetUser) {
+      const target = document.createElement("div");
+      target.className = "draft-target";
+      target.textContent = `u/${draft.targetUser}`;
+      head.appendChild(target);
+    }
+
+    const preview = document.createElement("div");
+    preview.className = "draft-preview";
+    preview.textContent = firstSentencePreview(draft.text, 140);
+
+    const contentEl = document.createElement("div");
+    contentEl.className = "draft-content";
+
+    const body = document.createElement("div");
+    body.className = "draft-text";
+    body.textContent = draft.text;
+
+    const actions = document.createElement("div");
+    actions.className = "draft-actions";
+    const copyBtn = document.createElement("button");
+    copyBtn.type = "button";
+    copyBtn.className = "draft-copy";
+    copyBtn.textContent = "Copy";
+    copyBtn.setAttribute("aria-label", `Copy ${draftKindLabel(draft.kind)} draft`);
+    copyBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      void copyTextWithFeedback(copyBtn, draft.text);
+    });
+    actions.appendChild(copyBtn);
+
+    contentEl.appendChild(body);
+    contentEl.appendChild(actions);
+
+    if (draft.rationale) {
+      const rationaleEl = document.createElement("p");
+      rationaleEl.className = "draft-rationale";
+      rationaleEl.textContent = draft.rationale;
+      contentEl.appendChild(rationaleEl);
+    }
+
+    const setExpanded = (expanded: boolean): void => {
+      card.classList.toggle("collapsed", !expanded);
+      toggleBtn.textContent = expanded ? "\u25BE" : "\u25B8";
+      toggleBtn.setAttribute("aria-expanded", expanded ? "true" : "false");
+      toggleBtn.setAttribute("aria-label", expanded ? "Collapse draft" : "Expand draft");
+    };
+
+    toggleBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setExpanded(card.classList.contains("collapsed"));
+    });
+
+    card.appendChild(head);
+    card.appendChild(preview);
+    card.appendChild(contentEl);
+    setExpanded(false);
+    feed.appendChild(card);
+  }
+
+  const cleanRemainder = remainder.trim();
+  if (cleanRemainder) {
+    const note = document.createElement("div");
+    note.className = "draft-remainder muted";
+    note.innerHTML = renderMarkdown(cleanRemainder);
+    feed.appendChild(note);
+  }
+
+  if (hasPartialFrame) {
+    const pending = document.createElement("div");
+    pending.className = "draft-pending muted";
+    pending.textContent = "Generating more drafts...";
+    feed.appendChild(pending);
+  }
+
+  bubble.appendChild(feed);
+}
+
+/**
+ * Main entry: parses streaming text and renders it.
+ * Returns structured data for history storage.
+ */
+function renderStructuredDrafts(
+  bubble: HTMLElement,
+  sourceText: string,
+): { displayText: string; hasStructuredDrafts: boolean; drafts: StructuredDraft[]; remainder: string } {
+  const { drafts, remainder, hasPartialFrame } = parseStructuredDrafts(sourceText);
+  const hasItemToken = sourceText.includes(ITEM_OPEN) || sourceText.includes(ITEM_CLOSE);
+
+  if (drafts.length === 0) {
+    if (hasPartialFrame || hasItemToken || sourceText.trim() === "\u2026" || !sourceText.trim()) {
+      renderThinkingState(bubble);
+      return { displayText: "", hasStructuredDrafts: true, drafts: [], remainder: "" };
+    }
+    bubble.classList.remove("structured");
+    bubble.innerHTML = renderMarkdown(sourceText);
+    wireCopyButton(bubble, sourceText);
+    return { displayText: sourceText, hasStructuredDrafts: false, drafts: [], remainder: sourceText };
+  }
+
+  const partialStart = hasPartialFrame ? remainder.lastIndexOf(ITEM_OPEN) : -1;
+  const safeRemainder = hasPartialFrame && partialStart >= 0 ? remainder.slice(0, partialStart).trim() : remainder;
+  renderDraftFeed(bubble, drafts, safeRemainder, hasPartialFrame);
+  return {
+    displayText: serializeDraftsForHistory(drafts, safeRemainder),
+    hasStructuredDrafts: true,
+    drafts,
+    remainder: safeRemainder,
+  };
+}
+
+function wireCopyButton(bubble: HTMLElement, fallbackContent: string): void {
+  if (fallbackContent.trim().length < 20) return;
+  if (bubble.querySelector(":scope > .copy-snippet")) return;
+  bubble.classList.add("copy-host");
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "copy-snippet";
+  btn.textContent = "Copy";
+  btn.setAttribute("aria-label", "Copy full response");
+  btn.addEventListener("click", async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const text = fallbackContent.trim();
+    if (!text) return;
+    const original = btn.textContent;
+    try { await navigator.clipboard.writeText(text); btn.textContent = "Copied"; }
+    catch { btn.textContent = "Failed"; }
+    finally { window.setTimeout(() => { btn.textContent = original; }, 1200); }
+  });
+  bubble.appendChild(btn);
+}
+
+// ---- init ----
 
 function init(): void {
   const chat = document.getElementById("chat") as HTMLElement;
@@ -28,28 +453,187 @@ function init(): void {
   const loadBtn = document.getElementById("load") as HTMLButtonElement;
   const clearBtn = document.getElementById("clear") as HTMLButtonElement;
   const summary = document.getElementById("thread-summary") as HTMLElement;
+  const goalBar = document.getElementById("goal-bar") as HTMLElement;
+  const loadBar = document.getElementById("load-bar") as HTMLElement;
   const goalSelect = document.getElementById("goal-select") as HTMLSelectElement | null;
+  const historyList = document.getElementById("history-list") as HTMLElement;
+  const liveModeBtn = document.getElementById("live-mode") as HTMLButtonElement;
+  const historyModeBtn = document.getElementById("history-mode") as HTMLButtonElement;
+  const historyBackBtn = document.getElementById("history-back") as HTMLButtonElement | null;
+  const composer = document.getElementById("composer") as HTMLElement;
+  const includeCommentsInput = document.getElementById("include-comments") as HTMLInputElement | null;
+  const commentToggle = document.getElementById("comment-toggle") as HTMLElement | null;
 
-  // ---- Bubbles ----
+  let mode: "live" | "history-list" | "history-detail" = "live";
+  let includeComments = true;
+  let selectedHistoryPostKey: string | null = null;
 
+  function updateCommentToggleVisualState(): void {
+    if (!commentToggle) return;
+    commentToggle.classList.toggle("active", includeComments);
+  }
+
+  async function loadIncludeCommentsPreference(): Promise<void> {
+    if (!includeCommentsInput) return;
+    const { [INCLUDE_COMMENTS_KEY]: saved = true } = (await chrome.storage.local.get(INCLUDE_COMMENTS_KEY)) as { [INCLUDE_COMMENTS_KEY]?: boolean };
+    includeComments = saved;
+    includeCommentsInput.checked = includeComments;
+    updateCommentToggleVisualState();
+  }
+
+  function renderLiveSummary(): void {
+    if (!thread) { summary.textContent = "No thread loaded."; summary.className = "muted"; return; }
+    const countMsg = `${thread.comments.length} comment${thread.comments.length !== 1 ? "s" : ""}`;
+    summary.innerHTML =
+      `<strong>${escapeHtml(thread.title || "(untitled)")}</strong><br>` +
+      `${escapeHtml(thread.subreddit)} \u00B7 u/${escapeHtml(thread.author)} \u00B7 ${countMsg}`;
+    summary.className = "";
+  }
+
+  /** Add a single bubble. For assistant turns use renderTurn instead when replaying history. */
   function addBubble(role: "user" | "assistant", content = ""): HTMLElement {
     const el = document.createElement("div");
     el.className = `bubble ${role}`;
-    el.textContent = content;
+    if (role === "assistant") {
+      renderStructuredDrafts(el, content);
+    } else {
+      el.textContent = content;
+    }
     chat.appendChild(el);
     chat.scrollTop = chat.scrollHeight;
     return el;
   }
 
-  // ---- Goals ----
+  /** Replay a saved turn faithfully using stored structured drafts if available. */
+  function renderTurn(turn: ConversationTurn): void {
+    const el = document.createElement("div");
+    el.className = `bubble ${turn.role}`;
+
+    if (turn.role === "user") {
+      el.textContent = turn.content;
+    } else if (turn.structuredDrafts && turn.structuredDrafts.length > 0) {
+      // Use saved structured drafts directly — same card UI as live chat
+      renderDraftFeed(el, turn.structuredDrafts, turn.structuredRemainder || "", false);
+    } else {
+      // Fallback: re-parse content (handles old saved chats without structuredDrafts)
+      renderStructuredDrafts(el, turn.content || "");
+    }
+
+    chat.appendChild(el);
+    chat.scrollTop = chat.scrollHeight;
+  }
+
+  function renderTranscript(turns: ConversationTurn[]): void {
+    chat.innerHTML = "";
+    for (const turn of turns) renderTurn(turn);
+  }
+
+  function setMode(next: "live" | "history-list" | "history-detail"): void {
+    mode = next;
+    const isLive = next === "live";
+    const isHistoryDetail = next === "history-detail";
+
+    liveModeBtn.classList.toggle("active", isLive);
+    historyModeBtn.classList.toggle("active", !isLive);
+    liveModeBtn.setAttribute("aria-selected", String(isLive));
+    historyModeBtn.setAttribute("aria-selected", String(!isLive));
+
+    historyList.classList.add("hidden");
+    composer.classList.toggle("hidden", !isLive);
+    goalBar.classList.toggle("hidden", !isLive);
+    loadBar.classList.toggle("hidden", !isLive);
+    summary.classList.toggle("hidden", !isLive);
+    loadBtn.disabled = !isLive;
+    clearBtn.disabled = !isLive;
+    goalSelect?.toggleAttribute("disabled", !isLive);
+    includeCommentsInput?.toggleAttribute("disabled", !isLive);
+    historyBackBtn?.classList.toggle("hidden", !isHistoryDetail);
+    chat.classList.toggle("history-list-view", next === "history-list");
+
+    if (isLive) {
+      renderLiveSummary();
+      if (history.length === 0) { chat.innerHTML = ""; } else { renderTranscript(history); }
+    }
+  }
+
+  async function renderHistoryList(): Promise<void> {
+    const map = await getSavedConversationMap();
+    const entries = Object.values(map).sort((a, b) => b.updatedAt - a.updatedAt);
+    chat.innerHTML = "";
+
+    const page = document.createElement("div");
+    page.className = "history-page";
+
+    const heading = document.createElement("div");
+    heading.className = "history-page-title";
+    heading.textContent = "Saved chats";
+    page.appendChild(heading);
+
+    if (entries.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "empty-history";
+      empty.textContent = "No saved chats yet. Send at least one message in Live chat.";
+      page.appendChild(empty);
+      chat.appendChild(page);
+      return;
+    }
+
+    const list = document.createElement("div");
+    list.className = "history-page-list";
+
+    for (const item of entries) {
+      const row = document.createElement("div");
+      row.className = "history-row";
+
+      const openBtn = document.createElement("button");
+      openBtn.className = "history-chat-item";
+
+      const dt = new Date(item.updatedAt);
+      const dateLabel = `${dt.toLocaleDateString()} ${dt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+
+      openBtn.innerHTML =
+        `<span class="title">${escapeHtml(item.title || "(untitled)")}</span>` +
+        `<span class="meta">${escapeHtml(item.subreddit)} \u00B7 ${item.turns.length} messages \u00B7 ${escapeHtml(dateLabel)}</span>`;
+
+      openBtn.addEventListener("click", () => {
+        selectedHistoryPostKey = item.postKey;
+        conversationSummary = item.summary || "";
+        threadSummary = item.threadSummary || "";
+        setMode("history-detail");
+        renderTranscript((item.turns || []) as ConversationTurn[]);
+      });
+
+      const deleteBtn = document.createElement("button");
+      deleteBtn.className = "history-delete";
+      deleteBtn.type = "button";
+      deleteBtn.textContent = "\uD83D\uDDD1";
+      deleteBtn.title = "Delete saved chat";
+      deleteBtn.setAttribute("aria-label", "Delete saved chat");
+      deleteBtn.addEventListener("click", async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!window.confirm("Delete this saved chat permanently?")) return;
+        const nextMap = await getSavedConversationMap();
+        if (!nextMap[item.postKey]) return;
+        delete nextMap[item.postKey];
+        await setSavedConversationMap(nextMap);
+        if (selectedHistoryPostKey === item.postKey) { selectedHistoryPostKey = null; setMode("history-list"); }
+        await renderHistoryList();
+      });
+
+      row.appendChild(openBtn);
+      row.appendChild(deleteBtn);
+      list.appendChild(row);
+    }
+
+    page.appendChild(list);
+    chat.appendChild(page);
+    chat.scrollTop = 0;
+  }
 
   async function loadGoals(): Promise<void> {
     if (!goalSelect) return;
-    const { goals = [], activeGoalId = null } = (await chrome.storage.local.get([
-      "goals",
-      "activeGoalId",
-    ])) as { goals?: Goal[]; activeGoalId?: string | null };
-
+    const { goals = [], activeGoalId = null } = (await chrome.storage.local.get(["goals", "activeGoalId"])) as { goals?: Goal[]; activeGoalId?: string | null };
     goalSelect.innerHTML = '<option value="">No goal</option>';
     for (const g of goals) {
       const opt = document.createElement("option");
@@ -61,12 +645,9 @@ function init(): void {
     activeGoal = activeGoalId ? (goals.find((g) => g.id === activeGoalId) ?? null) : null;
   }
 
-  document.getElementById("settings")?.addEventListener("click", () =>
-    chrome.runtime.openOptionsPage(),
-  );
-
+  document.getElementById("settings")?.addEventListener("click", () => chrome.runtime.openOptionsPage());
   document.getElementById("manage-goals")?.addEventListener("click", () =>
-    chrome.tabs.create({ url: chrome.runtime.getURL("goals.html") }),
+    chrome.tabs.create({ url: chrome.runtime.getURL("goals.html") })
   );
 
   goalSelect?.addEventListener("change", async () => {
@@ -77,20 +658,33 @@ function init(): void {
   });
 
   chrome.storage.onChanged.addListener((changes) => {
-    if (changes.goals || changes.activeGoalId) loadGoals();
+    if (changes.goals || changes.activeGoalId) void loadGoals();
+    if (changes[CHAT_HISTORY_KEY] && mode === "history-list") void renderHistoryList();
+    if (changes[INCLUDE_COMMENTS_KEY]) {
+      includeComments = Boolean(changes[INCLUDE_COMMENTS_KEY].newValue);
+      if (includeCommentsInput) includeCommentsInput.checked = includeComments;
+      updateCommentToggleVisualState();
+    }
   });
 
-  // ---- Thread loading ----
+  includeCommentsInput?.addEventListener("change", async () => {
+    includeComments = includeCommentsInput.checked;
+    updateCommentToggleVisualState();
+    await chrome.storage.local.set({ [INCLUDE_COMMENTS_KEY]: includeComments });
+  });
+
+  liveModeBtn.addEventListener("click", () => setMode("live"));
+  historyModeBtn.addEventListener("click", async () => { setMode("history-list"); await renderHistoryList(); });
+  historyBackBtn?.addEventListener("click", async () => { setMode("history-list"); await renderHistoryList(); });
 
   async function doLoad(): Promise<void> {
     const btnLabel = hasLoaded ? "Reload thread" : "Load thread from page";
-    loadBtn.textContent = "Loading…";
+    loadBtn.textContent = "Loading\u2026";
     loadBtn.disabled = true;
-    summary.textContent = "Loading…";
+    summary.textContent = "Loading\u2026";
     summary.className = "muted";
 
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
     if (!tab?.id || !/reddit\.com/.test(tab.url ?? "")) {
       summary.textContent = "Open a Reddit post tab, then try again.";
       loadBtn.textContent = btnLabel;
@@ -100,54 +694,57 @@ function init(): void {
 
     try {
       const resp = await trySendMessage(tab.id);
-
       if (!resp || (resp.ok && !resp.meta)) {
         summary.textContent = "Please refresh the Reddit tab (Ctrl+R) and try again.";
         loadBtn.textContent = btnLabel;
         loadBtn.disabled = false;
         return;
       }
-
       if (!resp.ok) {
-        summary.textContent = `Couldn't read thread: ${resp.error}`;
+        summary.textContent = `Couldn\'t read thread: ${resp.error}`;
         loadBtn.textContent = btnLabel;
         loadBtn.disabled = false;
         return;
       }
 
       thread = resp.thread;
-      const { meta } = resp;
+      history.length = 0;
+      chat.innerHTML = "";
+      conversationSummary = "";
+      threadSummary = "";
+      selectedHistoryPostKey = null;
 
+      const { meta } = resp;
       let countMsg = `${thread.comments.length} comment${thread.comments.length !== 1 ? "s" : ""}`;
       if (meta.hasMore) countMsg += " (more available on page)";
 
       summary.innerHTML =
         `<strong>${escapeHtml(thread.title || "(untitled)")}</strong><br>` +
-        `${escapeHtml(thread.subreddit)} · u/${escapeHtml(thread.author)} · ${countMsg}`;
+        `${escapeHtml(thread.subreddit)} \u00B7 u/${escapeHtml(thread.author)} \u00B7 ${countMsg}`;
 
       if (thread.comments.length === 0) {
-        summary.innerHTML +=
-          `<br><span class="warn">No comments captured — scroll down on the Reddit tab to load comments, then reload.</span>`;
+        summary.innerHTML += `<br><span class="warn">No comments captured \u2014 scroll down on the Reddit tab to load comments, then reload.</span>`;
       } else if (meta.partialLoad) {
-        summary.innerHTML +=
-          `<br><span class="warn">Some comments may not have loaded yet. Reload to retry.</span>`;
+        summary.innerHTML += `<br><span class="warn">Some comments may not have loaded yet. Reload to retry.</span>`;
       }
 
       hasLoaded = true;
       loadBtn.textContent = "Reload thread";
+      setMode("live");
     } catch (e) {
       summary.textContent = `Error: ${e instanceof Error ? e.message : String(e)}`;
       loadBtn.textContent = btnLabel;
     }
-
     loadBtn.disabled = false;
   }
 
-  loadBtn.addEventListener("click", doLoad);
+  loadBtn.addEventListener("click", () => { void doLoad(); });
 
   clearBtn.addEventListener("click", () => {
     history.length = 0;
     thread = null;
+    conversationSummary = "";
+    threadSummary = "";
     hasLoaded = false;
     chat.innerHTML = "";
     summary.textContent = "No thread loaded.";
@@ -155,35 +752,61 @@ function init(): void {
     loadBtn.textContent = "Load thread from page";
   });
 
-  // ---- Chat ----
-
   async function send(): Promise<void> {
+    if (sendBtn.disabled) return;
     const message = input.value.trim();
     if (!message) return;
 
-    const { apiKey } = (await chrome.storage.local.get("apiKey")) as { apiKey?: string };
-    if (!apiKey) {
-      addBubble("assistant", "No API key set. Click ⚙ to add your Anthropic API key.");
+    if (!thread) {
+      addBubble("assistant", "Load a Reddit thread first by clicking **Load thread from page**.");
       return;
     }
+    const { apiKey } = (await chrome.storage.local.get("apiKey")) as { apiKey?: string };
+    if (!apiKey) { addBubble("assistant", "No API key set. Click \u2699 to add your Anthropic API key."); return; }
 
     input.value = "";
     addBubble("user", message);
     history.push({ role: "user", content: message });
 
-    const out = addBubble("assistant", "…");
+    const out = addBubble("assistant", "\u2026");
     sendBtn.disabled = true;
 
     try {
       const client = getClient(apiKey);
-      const system = buildSystemPrompt(thread, activeGoal);
+      const firstThreadCall = !threadSummary.trim();
+      const system = buildSystemPrompt(thread, activeGoal, message, {
+        summary: firstThreadCall ? conversationSummary : threadSummary,
+        includeRawThread: firstThreadCall,
+        requestThreadSummary: firstThreadCall,
+        includeComments,
+      });
+
       let acc = "";
       for await (const delta of streamReply(client, system, history)) {
         acc += delta;
-        out.textContent = acc;
+        const { visibleText } = parseThreadSummaryBlock(acc);
+        renderStructuredDrafts(out, visibleText || "\u2026");
         chat.scrollTop = chat.scrollHeight;
       }
-      history.push({ role: "assistant", content: acc });
+
+      const { visibleText, extractedSummary } = parseThreadSummaryBlock(acc);
+      const rendered = renderStructuredDrafts(out, visibleText || acc);
+      const finalText = rendered.displayText || visibleText || acc;
+
+      if (firstThreadCall) {
+        threadSummary = truncate(extractedSummary || fallbackThreadSummary(thread), MAX_SUMMARY_CHARS);
+      }
+
+      // Save structured drafts with the turn so history can replay exact card UI
+      history.push({
+        role: "assistant",
+        content: finalText,
+        structuredDrafts: rendered.drafts.length ? rendered.drafts : undefined,
+        structuredRemainder: rendered.remainder || undefined,
+      });
+
+      truncateConversationSummary(message, finalText);
+      await saveCurrentConversation();
     } catch (e) {
       out.textContent = `Error: ${e instanceof Error ? e.message : String(e)}`;
     } finally {
@@ -191,19 +814,18 @@ function init(): void {
     }
   }
 
-  sendBtn.addEventListener("click", send);
+  sendBtn.addEventListener("click", () => { void send(); });
   input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-      e.preventDefault();
-      send();
-    }
+    if (sendBtn.disabled) return;
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void send(); }
   });
 
-  loadGoals();
+  void loadIncludeCommentsPreference();
+  void loadGoals();
+  void renderHistoryList();
+  setMode("live");
 }
 
-// DOMContentLoaded may have already fired by the time this script executes
-// (extension pages can behave differently). Handle both cases.
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", init);
 } else {
