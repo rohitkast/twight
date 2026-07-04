@@ -213,6 +213,38 @@ export function buildSystemPrompt(
   return parts.join("\n");
 }
 
+export function buildConversionSystemPrompt(
+  username: string,
+  kind: string,
+  subreddit: string,
+  originalDraft: string,
+  threadSummary: string,
+  goal: Goal | null,
+): string {
+  const goalSection = goal ? `# Goal\n${goal.name}: ${goal.description}` : null;
+  const parts = [
+    BASE_SYSTEM,
+    "",
+    "# Outreach context",
+    `You previously reached out to u/${username} on r/${subreddit} via ${kind}:`,
+    `"${truncate(originalDraft, 400)}"`,
+    "",
+    "# Thread context",
+    truncate(threadSummary.trim(), MAX_SUMMARY_CHARS),
+  ];
+  if (goalSection) parts.push("", goalSection);
+  parts.push(
+    "",
+    `The user will now tell you what u/${username} replied. Craft a follow-up that:`,
+    "- Feels like a natural continuation from the same person who sent the original message",
+    "- Moves toward a concrete next step without being pushy (discovery call, free review, etc.)",
+    "- Matches the tone of the original outreach and the subreddit culture",
+    "- Never sounds like marketing and never mentions AI",
+  );
+  appendOutputContract(parts, false);
+  return parts.join("\n");
+}
+
 export async function* streamReply(
   client: Anthropic,
   system: string,

@@ -1,4 +1,4 @@
-import { getClient, buildSystemPrompt, streamReply, type ChatTurn } from "./lib/claude";
+import { getClient, buildSystemPrompt, buildConversionSystemPrompt, streamReply, type ChatTurn } from "./lib/claude";
 import type { RedditThread, ExtractResponse, Goal, ScrollToUserResponse } from "./lib/types";
 import { marked } from "marked";
 
@@ -34,8 +34,26 @@ const MAX_SUMMARY_CHARS = 1200;
 const CHAT_HISTORY_KEY = "chatHistoryByPost";
 const MAX_HISTORY_ITEMS = 100;
 const INCLUDE_COMMENTS_KEY = "includeCommentsInDrafts";
+const TRACKED_USERS_KEY = "trackedUsers";
+const TRACKED_USERS_WARN_THRESHOLD = 30;
+const TRACKED_USERS_MAX = 50;
 const ITEM_OPEN = "<ITEM>";
 const ITEM_CLOSE = "</ITEM>";
+
+interface TrackedUser {
+  id: string;
+  savedAt: number;
+  username: string;
+  kind: DraftKind;
+  originalDraft: string;
+  postTitle: string;
+  postUrl: string;
+  subreddit: string;
+  threadSummary: string;
+  goalName: string;
+  goalDescription: string;
+  followUpTurns: ChatTurn[];
+}
 
 interface SavedConversation {
   postKey: string;
@@ -229,6 +247,31 @@ async function setSavedConversationMap(map: SavedConversationMap): Promise<void>
   await chrome.storage.local.set({ [CHAT_HISTORY_KEY]: map });
 }
 
+async function getTrackedUsers(): Promise<TrackedUser[]> {
+  const { [TRACKED_USERS_KEY]: raw = [] } = (await chrome.storage.local.get(TRACKED_USERS_KEY)) as { [TRACKED_USERS_KEY]?: TrackedUser[] };
+  return raw;
+}
+
+async function setTrackedUsers(users: TrackedUser[]): Promise<void> {
+  await chrome.storage.local.set({ [TRACKED_USERS_KEY]: users });
+}
+
+async function saveTrackedUser(user: TrackedUser): Promise<void> {
+  const users = await getTrackedUsers();
+  const alreadyExists = users.some((u) => u.username === user.username && u.postUrl && u.postUrl === user.postUrl);
+  if (alreadyExists) {
+    showToast(`u/${user.username} is already in your chat list for this post.`);
+    return;
+  }
+  if (users.length >= TRACKED_USERS_MAX) {
+    showToast("Chat list is full (50 max). Open Chat List and delete some old contacts.");
+    return;
+  }
+  users.unshift(user);
+  await setTrackedUsers(users);
+  showToast(`Saved u/${user.username} to Chat List ✓`);
+}
+
 async function saveCurrentConversation(): Promise<void> {
   const postKey = getPostKey(thread);
   if (!postKey || history.length === 0 || !thread) return;
@@ -325,6 +368,7 @@ function renderDraftFeed(
   drafts: StructuredDraft[],
   remainder: string,
   hasPartialFrame: boolean,
+  onSave?: (draft: StructuredDraft) => void,
 ): void {
   bubble.classList.add("structured");
   bubble.classList.remove("thinking");
@@ -397,6 +441,46 @@ function renderDraftFeed(
     });
     actions.appendChild(copyBtn);
 
+    if (onSave && draft.targetUser) {
+      const saveBtn = document.createElement("button");
+      saveBtn.type = "button";
+      saveBtn.className = "draft-save";
+      saveBtn.textContent = "Save";
+      saveBtn.setAttribute("aria-label", `Save draft for u/${draft.targetUser} to chat list`);
+      saveBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onSave(draft);
+      });
+      actions.appendChild(saveBtn);
+
+      const helpBtn = document.createElement("button");
+      helpBtn.type = "button";
+      helpBtn.className = "draft-help";
+      helpBtn.textContent = "?";
+      helpBtn.setAttribute("aria-label", "How does Save work?");
+      helpBtn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        // Toggle inline tooltip — remove if already shown
+        const existing = actions.querySelector(".draft-help-tip");
+        if (existing) { existing.remove(); return; }
+        const tip = document.createElement("div");
+        tip.className = "draft-help-tip";
+        tip.textContent = "Save adds this person to Chat List. When they reply, open Chat List, find them, paste their reply, and the AI will craft a follow-up to convert them.";
+        actions.appendChild(tip);
+        const dismiss = (ev: MouseEvent): void => {
+          if (!tip.contains(ev.target as Node) && ev.target !== helpBtn) {
+            tip.remove();
+            document.removeEventListener("click", dismiss);
+          }
+        };
+        window.setTimeout(() => document.addEventListener("click", dismiss), 0);
+        window.setTimeout(() => { tip.remove(); document.removeEventListener("click", dismiss); }, 6000);
+      });
+      actions.appendChild(helpBtn);
+    }
+
     contentEl.appendChild(body);
     contentEl.appendChild(actions);
 
@@ -452,6 +536,7 @@ function renderDraftFeed(
 function renderStructuredDrafts(
   bubble: HTMLElement,
   sourceText: string,
+  onSave?: (draft: StructuredDraft) => void,
 ): { displayText: string; hasStructuredDrafts: boolean; drafts: StructuredDraft[]; remainder: string } {
   const { drafts, remainder, hasPartialFrame } = parseStructuredDrafts(sourceText);
   const hasItemToken = sourceText.includes(ITEM_OPEN) || sourceText.includes(ITEM_CLOSE);
@@ -469,7 +554,7 @@ function renderStructuredDrafts(
 
   const partialStart = hasPartialFrame ? remainder.lastIndexOf(ITEM_OPEN) : -1;
   const safeRemainder = hasPartialFrame && partialStart >= 0 ? remainder.slice(0, partialStart).trim() : remainder;
-  renderDraftFeed(bubble, drafts, safeRemainder, hasPartialFrame);
+  renderDraftFeed(bubble, drafts, safeRemainder, hasPartialFrame, onSave);
   return {
     displayText: serializeDraftsForHistory(drafts, safeRemainder),
     hasStructuredDrafts: true,
@@ -520,11 +605,14 @@ function init(): void {
   const composer = document.getElementById("composer") as HTMLElement;
   const includeCommentsInput = document.getElementById("include-comments") as HTMLInputElement | null;
   const commentToggle = document.getElementById("comment-toggle") as HTMLElement | null;
+  const chatlistBtn = document.getElementById("chatlist-btn") as HTMLButtonElement;
+  const composerOptions = document.getElementById("composer-options") as HTMLElement;
 
-  let mode: "live" | "history-list" | "history-detail" = "live";
+  let mode: "live" | "history-list" | "history-detail" | "chatlist-list" | "chatlist-detail" = "live";
   let includeComments = true;
   let instructionActive = false;
   let selectedHistoryPostKey: string | null = null;
+  let currentTrackedUser: TrackedUser | null = null;
 
   function updateCommentToggleVisualState(): void {
     if (!commentToggle) return;
@@ -589,28 +677,46 @@ function init(): void {
     for (const turn of turns) renderTurn(turn);
   }
 
-  function setMode(next: "live" | "history-list" | "history-detail"): void {
+  function setMode(next: "live" | "history-list" | "history-detail" | "chatlist-list" | "chatlist-detail"): void {
     mode = next;
     const isLive = next === "live";
     const isHistoryDetail = next === "history-detail";
+    const isChatListDetail = next === "chatlist-detail";
+    const isChatListList = next === "chatlist-list";
+    const isAnyHistory = next === "history-list" || isHistoryDetail;
+    const showBackBtn = isHistoryDetail || isChatListDetail;
+    const isListView = next === "history-list" || isChatListList;
 
     liveModeBtn.classList.toggle("active", isLive);
-    historyModeBtn.classList.toggle("active", !isLive);
+    historyModeBtn.classList.toggle("active", isAnyHistory);
+    chatlistBtn.classList.toggle("active", isChatListDetail || isChatListList);
     liveModeBtn.setAttribute("aria-selected", String(isLive));
-    historyModeBtn.setAttribute("aria-selected", String(!isLive));
+    historyModeBtn.setAttribute("aria-selected", String(isAnyHistory));
 
     historyList.classList.add("hidden");
-    composer.classList.toggle("hidden", !isLive);
+    composer.classList.toggle("hidden", !isLive && !isChatListDetail);
     goalBar.classList.toggle("hidden", !isLive);
     loadBar.classList.toggle("hidden", !isLive);
     summary.classList.toggle("hidden", !isLive);
     loadBtn.disabled = !isLive;
     clearBtn.disabled = !isLive;
-    generateBtn.disabled = !isLive;
     goalSelect?.toggleAttribute("disabled", !isLive);
     includeCommentsInput?.toggleAttribute("disabled", !isLive);
-    historyBackBtn?.classList.toggle("hidden", !isHistoryDetail);
-    chat.classList.toggle("history-list-view", next === "history-list");
+    historyBackBtn?.classList.toggle("hidden", !showBackBtn);
+    chat.classList.toggle("history-list-view", isListView);
+
+    composerOptions.classList.toggle("hidden", isChatListDetail);
+    if (isChatListDetail) {
+      input.classList.remove("hidden");
+      input.placeholder = "What did they reply? Paste their message or describe\u2026";
+      generateBtn.textContent = "Send";
+      generateBtn.disabled = false;
+    } else {
+      input.classList.toggle("hidden", !instructionActive);
+      input.placeholder = "e.g. DMs only \u00B7 focus on u/someuser \u00B7 skip OP";
+      generateBtn.textContent = "Generate";
+      generateBtn.disabled = !isLive;
+    }
 
     if (isLive) {
       renderLiveSummary();
@@ -693,6 +799,199 @@ function init(): void {
     chat.scrollTop = 0;
   }
 
+  async function renderChatList(): Promise<void> {
+    const users = await getTrackedUsers();
+    chat.innerHTML = "";
+
+    const page = document.createElement("div");
+    page.className = "history-page";
+
+    const heading = document.createElement("div");
+    heading.className = "history-page-title";
+    heading.textContent = "Chat List";
+    page.appendChild(heading);
+
+    if (users.length > TRACKED_USERS_WARN_THRESHOLD) {
+      const warn = document.createElement("div");
+      warn.className = "chatlist-warning";
+      warn.textContent = `\u26A0\uFE0F ${users.length} contacts saved \u2014 getting large. Delete old ones who never replied to keep storage lean.`;
+      page.appendChild(warn);
+    }
+
+    if (users.length === 0) {
+      const empty = document.createElement("div");
+      empty.className = "empty-history";
+      empty.textContent = "No saved contacts yet. Click \u201CSave\u201D on a draft card to track someone you outreached.";
+      page.appendChild(empty);
+      chat.appendChild(page);
+      return;
+    }
+
+    const list = document.createElement("div");
+    list.className = "history-page-list";
+
+    for (const user of users) {
+      const row = document.createElement("div");
+      row.className = "history-row";
+
+      const openBtn = document.createElement("button");
+      openBtn.className = "history-chat-item";
+
+      const dt = new Date(user.savedAt);
+      const dateLabel = `${dt.toLocaleDateString()} ${dt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+      const followUpCount = Math.floor(user.followUpTurns.length / 2);
+
+      openBtn.innerHTML =
+        `<span class="title">u/${escapeHtml(user.username)}</span>` +
+        `<span class="meta chatlist-meta">` +
+        `<span class="draft-badge ${user.kind}">${draftKindLabel(user.kind)}</span> ` +
+        `${escapeHtml(truncate(user.postTitle, 50))} \u00B7 ${escapeHtml(dateLabel)}` +
+        (followUpCount > 0 ? ` \u00B7 ${followUpCount} follow-up${followUpCount !== 1 ? "s" : ""}` : "") +
+        `</span>`;
+
+      openBtn.addEventListener("click", () => { renderChatListDetail(user); });
+
+      const deleteBtn = document.createElement("button");
+      deleteBtn.className = "history-delete";
+      deleteBtn.type = "button";
+      deleteBtn.textContent = "\uD83D\uDDD1";
+      deleteBtn.title = "Remove from chat list";
+      deleteBtn.setAttribute("aria-label", "Remove from chat list");
+      deleteBtn.addEventListener("click", async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!window.confirm(`Remove u/${user.username} from chat list?`)) return;
+        const next = await getTrackedUsers();
+        await setTrackedUsers(next.filter((u) => u.id !== user.id));
+        if (currentTrackedUser?.id === user.id) currentTrackedUser = null;
+        await renderChatList();
+      });
+
+      row.appendChild(openBtn);
+      row.appendChild(deleteBtn);
+      list.appendChild(row);
+    }
+
+    page.appendChild(list);
+    chat.appendChild(page);
+    chat.scrollTop = 0;
+  }
+
+  function renderChatListDetail(user: TrackedUser): void {
+    currentTrackedUser = user;
+    chat.innerHTML = "";
+
+    const ctx = document.createElement("div");
+    ctx.className = "chatlist-context-card";
+
+    const ctxHeader = document.createElement("div");
+    ctxHeader.className = "chatlist-context-header";
+    const kindBadge = document.createElement("span");
+    kindBadge.className = `draft-badge ${user.kind}`;
+    kindBadge.textContent = draftKindLabel(user.kind);
+    ctxHeader.appendChild(kindBadge);
+    ctxHeader.appendChild(document.createTextNode(` to `));
+    const uname = document.createElement("strong");
+    uname.textContent = `u/${user.username}`;
+    ctxHeader.appendChild(uname);
+    ctxHeader.appendChild(document.createTextNode(` \u00B7 `));
+    const sub = document.createElement("span");
+    sub.className = "muted";
+    sub.textContent = user.subreddit;
+    ctxHeader.appendChild(sub);
+    ctx.appendChild(ctxHeader);
+
+    const origLabel = document.createElement("div");
+    origLabel.className = "chatlist-orig-label";
+    origLabel.textContent = "Your outreach:";
+    ctx.appendChild(origLabel);
+
+    const orig = document.createElement("div");
+    orig.className = "chatlist-original-draft";
+    orig.textContent = user.originalDraft;
+    ctx.appendChild(orig);
+
+    const details = document.createElement("details");
+    details.className = "chatlist-thread-summary";
+    const summary2 = document.createElement("summary");
+    summary2.textContent = "Thread context";
+    const pre = document.createElement("pre");
+    pre.textContent = user.threadSummary || "(no thread context saved)";
+    details.appendChild(summary2);
+    details.appendChild(pre);
+    ctx.appendChild(details);
+
+    chat.appendChild(ctx);
+
+    for (const turn of user.followUpTurns) {
+      const el = document.createElement("div");
+      el.className = `bubble ${turn.role}`;
+      if (turn.role === "user") {
+        el.textContent = turn.content;
+      } else {
+        renderStructuredDrafts(el, turn.content || "");
+      }
+      chat.appendChild(el);
+    }
+
+    chat.scrollTop = chat.scrollHeight;
+    setMode("chatlist-detail");
+  }
+
+  async function sendFollowUp(): Promise<void> {
+    if (!currentTrackedUser) return;
+    if (generateBtn.disabled) return;
+    const userMsg = input.value.trim();
+    if (!userMsg) {
+      showToast("Describe what they replied before sending.");
+      return;
+    }
+    const { apiKey } = (await chrome.storage.local.get("apiKey")) as { apiKey?: string };
+    if (!apiKey) { addBubble("assistant", "No API key set. Click \u2699 to add your Anthropic API key."); return; }
+
+    const goal: Goal | null = currentTrackedUser.goalName
+      ? { id: "", name: currentTrackedUser.goalName, description: currentTrackedUser.goalDescription }
+      : null;
+
+    const system = buildConversionSystemPrompt(
+      currentTrackedUser.username,
+      currentTrackedUser.kind,
+      currentTrackedUser.subreddit,
+      currentTrackedUser.originalDraft,
+      currentTrackedUser.threadSummary,
+      goal,
+    );
+
+    addBubble("user", userMsg);
+    input.value = "";
+
+    const userTurn: ChatTurn = { role: "user", content: userMsg };
+    currentTrackedUser.followUpTurns.push(userTurn);
+    const out = addBubble("assistant", "\u2026");
+    generateBtn.disabled = true;
+
+    try {
+      const client = getClient(apiKey);
+      let acc = "";
+      for await (const delta of streamReply(client, system, currentTrackedUser.followUpTurns)) {
+        acc += delta;
+        renderStructuredDrafts(out, acc || "\u2026");
+        chat.scrollTop = chat.scrollHeight;
+      }
+      const rendered = renderStructuredDrafts(out, acc || "");
+      const finalText = rendered.displayText || acc;
+      currentTrackedUser.followUpTurns.push({ role: "assistant", content: finalText });
+
+      const users = await getTrackedUsers();
+      const idx = users.findIndex((u) => u.id === currentTrackedUser!.id);
+      if (idx >= 0) { users[idx] = currentTrackedUser; await setTrackedUsers(users); }
+    } catch (e) {
+      out.textContent = `Error: ${e instanceof Error ? e.message : String(e)}`;
+    } finally {
+      generateBtn.disabled = false;
+    }
+  }
+
   async function loadGoals(): Promise<void> {
     if (!goalSelect) return;
     const { goals = [], activeGoalId = null } = (await chrome.storage.local.get(["goals", "activeGoalId"])) as { goals?: Goal[]; activeGoalId?: string | null };
@@ -722,6 +1021,7 @@ function init(): void {
   chrome.storage.onChanged.addListener((changes) => {
     if (changes.goals || changes.activeGoalId) void loadGoals();
     if (changes[CHAT_HISTORY_KEY] && mode === "history-list") void renderHistoryList();
+    if (changes[TRACKED_USERS_KEY] && mode === "chatlist-list") void renderChatList();
     if (changes[INCLUDE_COMMENTS_KEY]) {
       includeComments = Boolean(changes[INCLUDE_COMMENTS_KEY].newValue);
       if (includeCommentsInput) includeCommentsInput.checked = includeComments;
@@ -737,7 +1037,11 @@ function init(): void {
 
   liveModeBtn.addEventListener("click", () => setMode("live"));
   historyModeBtn.addEventListener("click", async () => { setMode("history-list"); await renderHistoryList(); });
-  historyBackBtn?.addEventListener("click", async () => { setMode("history-list"); await renderHistoryList(); });
+  historyBackBtn?.addEventListener("click", async () => {
+    if (mode === "chatlist-detail") { setMode("chatlist-list"); await renderChatList(); }
+    else { setMode("history-list"); await renderHistoryList(); }
+  });
+  chatlistBtn.addEventListener("click", async () => { setMode("chatlist-list"); await renderChatList(); });
 
   async function doLoad(): Promise<void> {
     const btnLabel = hasLoaded ? "Reload thread" : "Load thread from page";
@@ -862,7 +1166,24 @@ function init(): void {
       }
 
       const { visibleText, extractedSummary } = parseThreadSummaryBlock(acc);
-      const rendered = renderStructuredDrafts(out, visibleText || acc);
+      const onSave = (draft: StructuredDraft): void => {
+        if (!draft.targetUser) return;
+        void saveTrackedUser({
+          id: crypto.randomUUID(),
+          savedAt: Date.now(),
+          username: draft.targetUser,
+          kind: draft.kind,
+          originalDraft: draft.text,
+          postTitle: thread?.title ?? "(untitled)",
+          postUrl: thread?.url ?? "",
+          subreddit: thread?.subreddit ?? "?",
+          threadSummary: threadSummary || fallbackThreadSummary(thread!),
+          goalName: activeGoal?.name ?? "",
+          goalDescription: activeGoal?.description ?? "",
+          followUpTurns: [],
+        });
+      };
+      const rendered = renderStructuredDrafts(out, visibleText || acc, onSave);
       const finalText = rendered.displayText || visibleText || acc;
 
       if (firstThreadCall) {
@@ -898,10 +1219,17 @@ function init(): void {
     }
   });
 
-  generateBtn.addEventListener("click", () => { void send(); });
+  generateBtn.addEventListener("click", () => {
+    if (mode === "chatlist-detail") { void sendFollowUp(); }
+    else { void send(); }
+  });
   input.addEventListener("keydown", (e) => {
     if (generateBtn.disabled) return;
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void send(); }
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      if (mode === "chatlist-detail") { void sendFollowUp(); }
+      else { void send(); }
+    }
   });
 
   void loadIncludeCommentsPreference();
