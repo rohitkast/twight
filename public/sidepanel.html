@@ -36,15 +36,15 @@
   <main id="chat"></main>
 
   <footer id="composer">
-    <div id="composer-tools">
+    <div id="composer-options">
       <label id="comment-toggle" for="include-comments" title="When off, drafts focus on DMs only">
         <input id="include-comments" type="checkbox" checked />
-        <span>Send comments too</span>
+        <span>Include comments</span>
       </label>
+      <button id="instruction-toggle" type="button">+ Instruction</button>
     </div>
-    <textarea id="input" rows="3"
-      placeholder="e.g. Draft a friendly reply to u/someuser — or write a DM inviting them to collaborate. (Ctrl/Cmd+Enter to send)"></textarea>
-    <button id="send">Send</button>
+    <textarea id="input" rows="2" class="hidden" placeholder="e.g. DMs only · focus on u/someuser · skip OP"></textarea>
+    <button id="generate-btn">Generate</button>
   </footer>
 
   <script src="sidepanel.js"></script>

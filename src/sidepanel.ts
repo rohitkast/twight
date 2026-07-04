@@ -22,6 +22,8 @@ interface StructuredDraft {
 type ConversationTurn = ChatTurn & {
   structuredDrafts?: StructuredDraft[];
   structuredRemainder?: string;
+  /** When true, this user turn was auto-generated (no instruction typed) and should not render in the UI. */
+  hidden?: boolean;
 };
 
 const history: ConversationTurn[] = [];
@@ -503,7 +505,8 @@ function wireCopyButton(bubble: HTMLElement, fallbackContent: string): void {
 function init(): void {
   const chat = document.getElementById("chat") as HTMLElement;
   const input = document.getElementById("input") as HTMLTextAreaElement;
-  const sendBtn = document.getElementById("send") as HTMLButtonElement;
+  const generateBtn = document.getElementById("generate-btn") as HTMLButtonElement;
+  const instructionToggleBtn = document.getElementById("instruction-toggle") as HTMLButtonElement;
   const loadBtn = document.getElementById("load") as HTMLButtonElement;
   const clearBtn = document.getElementById("clear") as HTMLButtonElement;
   const summary = document.getElementById("thread-summary") as HTMLElement;
@@ -520,6 +523,7 @@ function init(): void {
 
   let mode: "live" | "history-list" | "history-detail" = "live";
   let includeComments = true;
+  let instructionActive = false;
   let selectedHistoryPostKey: string | null = null;
 
   function updateCommentToggleVisualState(): void {
@@ -560,6 +564,9 @@ function init(): void {
 
   /** Replay a saved turn faithfully using stored structured drafts if available. */
   function renderTurn(turn: ConversationTurn): void {
+    // Skip auto-generated user turns that have no visible instruction
+    if (turn.hidden) return;
+
     const el = document.createElement("div");
     el.className = `bubble ${turn.role}`;
 
@@ -599,6 +606,7 @@ function init(): void {
     summary.classList.toggle("hidden", !isLive);
     loadBtn.disabled = !isLive;
     clearBtn.disabled = !isLive;
+    generateBtn.disabled = !isLive;
     goalSelect?.toggleAttribute("disabled", !isLive);
     includeCommentsInput?.toggleAttribute("disabled", !isLive);
     historyBackBtn?.classList.toggle("hidden", !isHistoryDetail);
@@ -748,8 +756,9 @@ function init(): void {
 
     try {
       const resp = await trySendMessage(tab.id);
-      if (!resp || (resp.ok && !resp.meta)) {
-        summary.textContent = "Please refresh the Reddit tab (Ctrl+R) and try again.";
+
+      if (!resp) {
+        summary.textContent = "Couldn\u2019t reach the page \u2014 refresh the Reddit tab (Ctrl+R) and try again.";
         loadBtn.textContent = btnLabel;
         loadBtn.disabled = false;
         return;
@@ -807,10 +816,12 @@ function init(): void {
   });
 
   async function send(): Promise<void> {
-    if (sendBtn.disabled) return;
-    const message = input.value.trim();
-    if (!message) return;
+    if (generateBtn.disabled) return;
 
+    if (!activeGoal) {
+      showToast("Select a goal first — click the goal dropdown to choose one.");
+      return;
+    }
     if (!thread) {
       addBubble("assistant", "Load a Reddit thread first by clicking **Load thread from page**.");
       return;
@@ -818,17 +829,24 @@ function init(): void {
     const { apiKey } = (await chrome.storage.local.get("apiKey")) as { apiKey?: string };
     if (!apiKey) { addBubble("assistant", "No API key set. Click \u2699 to add your Anthropic API key."); return; }
 
-    input.value = "";
-    addBubble("user", message);
-    history.push({ role: "user", content: message });
+    // Instruction is only active when the toggle is on
+    const instruction = instructionActive ? input.value.trim() : "";
+    // The API always needs a non-empty user message; use instruction → goal
+    const apiMessage = instruction
+      || `${activeGoal.name}: ${activeGoal.description}`;
+
+    // Show instruction bubble only when the user actually typed something
+    if (instruction) addBubble("user", instruction);
+
+    history.push({ role: "user", content: apiMessage, hidden: !instruction });
 
     const out = addBubble("assistant", "\u2026");
-    sendBtn.disabled = true;
+    generateBtn.disabled = true;
 
     try {
       const client = getClient(apiKey);
       const firstThreadCall = !threadSummary.trim();
-      const system = buildSystemPrompt(thread, activeGoal, message, {
+      const system = buildSystemPrompt(thread, activeGoal, apiMessage, {
         summary: firstThreadCall ? conversationSummary : threadSummary,
         includeRawThread: firstThreadCall,
         requestThreadSummary: firstThreadCall,
@@ -859,18 +877,30 @@ function init(): void {
         structuredRemainder: rendered.remainder || undefined,
       });
 
-      truncateConversationSummary(message, finalText);
+      truncateConversationSummary(apiMessage, finalText);
       await saveCurrentConversation();
     } catch (e) {
       out.textContent = `Error: ${e instanceof Error ? e.message : String(e)}`;
     } finally {
-      sendBtn.disabled = false;
+      generateBtn.disabled = false;
     }
   }
 
-  sendBtn.addEventListener("click", () => { void send(); });
+  instructionToggleBtn.addEventListener("click", () => {
+    instructionActive = !instructionActive;
+    instructionToggleBtn.classList.toggle("active", instructionActive);
+    instructionToggleBtn.textContent = instructionActive ? "− Remove instruction" : "+ Instruction";
+    input.classList.toggle("hidden", !instructionActive);
+    if (instructionActive) {
+      input.focus();
+    } else {
+      input.value = "";
+    }
+  });
+
+  generateBtn.addEventListener("click", () => { void send(); });
   input.addEventListener("keydown", (e) => {
-    if (sendBtn.disabled) return;
+    if (generateBtn.disabled) return;
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void send(); }
   });
 
