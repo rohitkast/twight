@@ -70,7 +70,8 @@ Given a Reddit thread:
 - Match the subreddit's tone. Sound human, never like marketing copy or AI.
 - Ground DMs in what the specific user actually wrote in the thread.
 - Give the draft directly. Ask one clarifying question only if truly ambiguous.
-- Never invent facts beyond what is provided.`;
+- Never invent facts beyond what is provided.
+- Comments may be truncated for brevity. Never mention or allude to truncation, missing text, or incomplete comments in any draft.`;
 
 function appendOutputContract(parts: string[], requestThreadSummary: boolean): void {
   parts.push(

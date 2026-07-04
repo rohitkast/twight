@@ -1,5 +1,5 @@
 import { getClient, buildSystemPrompt, streamReply, type ChatTurn } from "./lib/claude";
-import type { RedditThread, ExtractResponse, Goal } from "./lib/types";
+import type { RedditThread, ExtractResponse, Goal, ScrollToUserResponse } from "./lib/types";
 import { marked } from "marked";
 
 // ---- Module-level state ----
@@ -251,6 +251,53 @@ async function saveCurrentConversation(): Promise<void> {
 
 // ---- UI rendering helpers ----
 
+function showToast(message: string, durationMs = 3000): void {
+  const existing = document.getElementById("rra-toast");
+  if (existing) existing.remove();
+  const toast = document.createElement("div");
+  toast.id = "rra-toast";
+  toast.className = "rra-toast";
+  toast.textContent = message;
+  document.body.appendChild(toast);
+  // Trigger CSS transition
+  requestAnimationFrame(() => toast.classList.add("visible"));
+  window.setTimeout(() => {
+    toast.classList.remove("visible");
+    toast.addEventListener("transitionend", () => toast.remove(), { once: true });
+  }, durationMs);
+}
+
+async function scrollToUserInTab(username: string): Promise<void> {
+  let tab: chrome.tabs.Tab | undefined;
+  try {
+    [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  } catch {
+    showToast("Could not access the active tab.");
+    return;
+  }
+
+  if (!tab?.id || !/reddit\.com/.test(tab.url ?? "")) {
+    showToast("Switch to the Reddit tab first, then click the username.");
+    return;
+  }
+
+  let resp: ScrollToUserResponse;
+  try {
+    resp = await chrome.tabs.sendMessage(tab.id, { type: "SCROLL_TO_USER", username });
+  } catch {
+    showToast("Could not reach the page — try refreshing the Reddit tab.");
+    return;
+  }
+
+  if (!resp.ok) {
+    if (resp.error === "user_not_found") {
+      showToast(`u/${username} not found on this page — they may not have a visible comment loaded.`);
+    } else {
+      showToast("Could not scroll to that user.");
+    }
+  }
+}
+
 async function copyTextWithFeedback(btn: HTMLButtonElement, text: string): Promise<void> {
   const original = btn.textContent;
   try { await navigator.clipboard.writeText(text); btn.textContent = "Copied"; }
@@ -310,9 +357,16 @@ function renderDraftFeed(
     head.appendChild(titleEl);
 
     if (draft.targetUser) {
-      const target = document.createElement("div");
+      const target = document.createElement("button");
+      target.type = "button";
       target.className = "draft-target";
       target.textContent = `u/${draft.targetUser}`;
+      target.title = `Scroll to u/${draft.targetUser} on the Reddit page`;
+      target.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        void scrollToUserInTab(draft.targetUser!);
+      });
       head.appendChild(target);
     }
 

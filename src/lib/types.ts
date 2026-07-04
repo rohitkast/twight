@@ -29,7 +29,13 @@ export interface ExtractMeta {
   hasMore: boolean;
 }
 
-export type ExtractRequest = { type: "EXTRACT_THREAD" };
+export type ExtractRequest =
+  | { type: "EXTRACT_THREAD" }
+  | { type: "SCROLL_TO_USER"; username: string };
+
+export type ScrollToUserResponse =
+  | { ok: true }
+  | { ok: false; error: "not_reddit" | "user_not_found" };
 
 export type ExtractResponse =
   | { ok: true; thread: RedditThread; meta: ExtractMeta }

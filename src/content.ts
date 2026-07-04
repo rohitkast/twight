@@ -5,6 +5,7 @@ import type {
   ExtractRequest,
   ExtractResponse,
   ExtractMeta,
+  ScrollToUserResponse,
 } from "./lib/types";
 
 function text(el: Element | null | undefined): string {
@@ -120,13 +121,55 @@ async function extractThread(): Promise<{ thread: RedditThread; meta: ExtractMet
 }
 
 chrome.runtime.onMessage.addListener(
-  (msg: ExtractRequest, _sender, sendResponse: (r: ExtractResponse) => void) => {
+  (msg: ExtractRequest, _sender, sendResponse: (r: ExtractResponse | ScrollToUserResponse) => void) => {
     if (msg?.type === "EXTRACT_THREAD") {
       extractThread()
         .then(({ thread, meta }) => sendResponse({ ok: true, thread, meta }))
         .catch((e) => sendResponse({ ok: false, error: String(e) }));
       return true; // keep channel open for async response
     }
+
+    if (msg?.type === "SCROLL_TO_USER") {
+      const { username } = msg;
+      const escaped = CSS.escape(username);
+
+      // Check if the username matches the post author (new Reddit)
+      const postNode = document.querySelector(`shreddit-post[author="${escaped}"]`);
+      if (postNode) {
+        postNode.scrollIntoView({ behavior: "smooth", block: "start" });
+        sendResponse({ ok: true });
+        return false;
+      }
+
+      // Check post author (old Reddit)
+      const oldPostAuthor = document.querySelector(".top-matter .author");
+      if (oldPostAuthor && oldPostAuthor.textContent?.trim() === username) {
+        const oldPost = document.querySelector("#siteTable .thing.link") ?? oldPostAuthor;
+        oldPost.scrollIntoView({ behavior: "smooth", block: "start" });
+        sendResponse({ ok: true });
+        return false;
+      }
+
+      // New Reddit comment
+      const shredditNode = document.querySelector(`shreddit-comment[author="${escaped}"]`);
+      if (shredditNode) {
+        shredditNode.scrollIntoView({ behavior: "smooth", block: "center" });
+        sendResponse({ ok: true });
+        return false;
+      }
+
+      // Old Reddit comment
+      const oldNode = document.querySelector(`.thing.comment[data-author="${escaped}"]`);
+      if (oldNode) {
+        oldNode.scrollIntoView({ behavior: "smooth", block: "center" });
+        sendResponse({ ok: true });
+        return false;
+      }
+
+      sendResponse({ ok: false, error: "user_not_found" });
+      return false;
+    }
+
     return false;
   },
 );

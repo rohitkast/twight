@@ -1,18 +1,34 @@
 {
   "manifest_version": 3,
-  "name": "Reddit Reply Assistant",
-  "version": "0.1.0",
+  "name": "Twight",
+  "version": "0.1.1",
   "description": "Reads a Reddit post + comments and drafts tailored replies and DMs with Claude.",
-  "permissions": ["storage", "sidePanel", "tabs"],
-  "host_permissions": ["https://*.reddit.com/*", "https://api.anthropic.com/*"],
-  "background": { "service_worker": "background.js" },
-  "action": { "default_title": "Reddit Reply Assistant" },
-  "side_panel": { "default_path": "sidepanel.html" },
+  "permissions": [
+    "storage",
+    "sidePanel"
+  ],
+  "host_permissions": [
+    "https://*.reddit.com/*",
+    "https://api.anthropic.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Twight"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
   "options_page": "options.html",
   "content_scripts": [
     {
-      "matches": ["https://*.reddit.com/*"],
-      "js": ["content.js"],
+      "matches": [
+        "https://*.reddit.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_idle"
     }
   ]
