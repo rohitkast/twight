@@ -1,4 +1,5 @@
 import { getClient, buildSystemPrompt, buildConversionSystemPrompt, streamReply, type ChatTurn } from "./lib/claude";
+import { getGeminiClient, streamReplyGemini } from "./lib/gemini";
 import type { RedditThread, ExtractResponse, Goal, ScrollToUserResponse } from "./lib/types";
 import { marked } from "marked";
 
@@ -34,6 +35,8 @@ const MAX_SUMMARY_CHARS = 1200;
 const CHAT_HISTORY_KEY = "chatHistoryByPost";
 const MAX_HISTORY_ITEMS = 100;
 const INCLUDE_COMMENTS_KEY = "includeCommentsInDrafts";
+const MODEL_PROVIDER_KEY = "modelProvider";
+const STREAM_TIMEOUT_MS = 30_000;
 const TRACKED_USERS_KEY = "trackedUsers";
 const TRACKED_USERS_WARN_THRESHOLD = 30;
 const TRACKED_USERS_MAX = 50;
@@ -605,11 +608,13 @@ function init(): void {
   const composer = document.getElementById("composer") as HTMLElement;
   const includeCommentsInput = document.getElementById("include-comments") as HTMLInputElement | null;
   const commentToggle = document.getElementById("comment-toggle") as HTMLElement | null;
+  const modelSelect = document.getElementById("model-select") as HTMLSelectElement | null;
   const chatlistBtn = document.getElementById("chatlist-btn") as HTMLButtonElement;
   const composerOptions = document.getElementById("composer-options") as HTMLElement;
 
   let mode: "live" | "history-list" | "history-detail" | "chatlist-list" | "chatlist-detail" = "live";
   let includeComments = true;
+  let modelProvider: "claude" | "gemini" = "claude";
   let instructionActive = false;
   let selectedHistoryPostKey: string | null = null;
   let currentTrackedUser: TrackedUser | null = null;
@@ -625,6 +630,13 @@ function init(): void {
     includeComments = saved;
     includeCommentsInput.checked = includeComments;
     updateCommentToggleVisualState();
+  }
+
+  async function loadModelPreference(): Promise<void> {
+    if (!modelSelect) return;
+    const { [MODEL_PROVIDER_KEY]: saved = "claude" } = (await chrome.storage.local.get(MODEL_PROVIDER_KEY)) as { [MODEL_PROVIDER_KEY]?: string };
+    modelProvider = saved === "gemini" ? "gemini" : "claude";
+    modelSelect.value = modelProvider;
   }
 
   function renderLiveSummary(): void {
@@ -702,6 +714,7 @@ function init(): void {
     clearBtn.disabled = !isLive;
     goalSelect?.toggleAttribute("disabled", !isLive);
     includeCommentsInput?.toggleAttribute("disabled", !isLive);
+    modelSelect?.toggleAttribute("disabled", !isLive);
     historyBackBtn?.classList.toggle("hidden", !showBackBtn);
     chat.classList.toggle("history-list-view", isListView);
 
@@ -745,6 +758,18 @@ function init(): void {
       chat.appendChild(page);
       return;
     }
+
+    const clearAllBtn = document.createElement("button");
+    clearAllBtn.className = "history-clear-all";
+    clearAllBtn.type = "button";
+    clearAllBtn.textContent = "Clear all";
+    clearAllBtn.addEventListener("click", async () => {
+      if (!window.confirm("Delete all saved chats permanently?")) return;
+      await setSavedConversationMap({});
+      selectedHistoryPostKey = null;
+      await renderHistoryList();
+    });
+    heading.appendChild(clearAllBtn);
 
     const list = document.createElement("div");
     list.className = "history-page-list";
@@ -826,6 +851,18 @@ function init(): void {
       chat.appendChild(page);
       return;
     }
+
+    const clearAllBtn = document.createElement("button");
+    clearAllBtn.className = "history-clear-all";
+    clearAllBtn.type = "button";
+    clearAllBtn.textContent = "Clear all";
+    clearAllBtn.addEventListener("click", async () => {
+      if (!window.confirm("Remove all contacts from chat list permanently?")) return;
+      await setTrackedUsers([]);
+      currentTrackedUser = null;
+      await renderChatList();
+    });
+    heading.appendChild(clearAllBtn);
 
     const list = document.createElement("div");
     list.className = "history-page-list";
@@ -946,8 +983,12 @@ function init(): void {
       showToast("Describe what they replied before sending.");
       return;
     }
-    const { apiKey } = (await chrome.storage.local.get("apiKey")) as { apiKey?: string };
-    if (!apiKey) { addBubble("assistant", "No API key set. Click \u2699 to add your Anthropic API key."); return; }
+    const { apiKey, geminiApiKey } = (await chrome.storage.local.get(["apiKey", "geminiApiKey"])) as { apiKey?: string; geminiApiKey?: string };
+    if (modelProvider === "gemini") {
+      if (!geminiApiKey) { addBubble("assistant", "No Gemini API key set. Click \u2699 to add your Google API key."); return; }
+    } else {
+      if (!apiKey) { addBubble("assistant", "No API key set. Click \u2699 to add your Anthropic API key."); return; }
+    }
 
     const goal: Goal | null = currentTrackedUser.goalName
       ? { id: "", name: currentTrackedUser.goalName, description: currentTrackedUser.goalDescription }
@@ -970,10 +1011,17 @@ function init(): void {
     const out = addBubble("assistant", "\u2026");
     generateBtn.disabled = true;
 
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), STREAM_TIMEOUT_MS);
+
     try {
-      const client = getClient(apiKey);
+      const stream =
+        modelProvider === "gemini"
+          ? streamReplyGemini(getGeminiClient(geminiApiKey!), system, currentTrackedUser.followUpTurns, controller.signal)
+          : streamReply(getClient(apiKey!), system, currentTrackedUser.followUpTurns, controller.signal);
+
       let acc = "";
-      for await (const delta of streamReply(client, system, currentTrackedUser.followUpTurns)) {
+      for await (const delta of stream) {
         acc += delta;
         renderStructuredDrafts(out, acc || "\u2026");
         chat.scrollTop = chat.scrollHeight;
@@ -986,8 +1034,13 @@ function init(): void {
       const idx = users.findIndex((u) => u.id === currentTrackedUser!.id);
       if (idx >= 0) { users[idx] = currentTrackedUser; await setTrackedUsers(users); }
     } catch (e) {
-      out.textContent = `Error: ${e instanceof Error ? e.message : String(e)}`;
+      if (e instanceof Error && e.name === "AbortError") {
+        out.textContent = "Request timed out — something went wrong. Try again or refresh the page.";
+      } else {
+        out.textContent = `Error: ${e instanceof Error ? e.message : String(e)}`;
+      }
     } finally {
+      window.clearTimeout(timeoutId);
       generateBtn.disabled = false;
     }
   }
@@ -1033,6 +1086,11 @@ function init(): void {
     includeComments = includeCommentsInput.checked;
     updateCommentToggleVisualState();
     await chrome.storage.local.set({ [INCLUDE_COMMENTS_KEY]: includeComments });
+  });
+
+  modelSelect?.addEventListener("change", async () => {
+    modelProvider = modelSelect.value === "gemini" ? "gemini" : "claude";
+    await chrome.storage.local.set({ [MODEL_PROVIDER_KEY]: modelProvider });
   });
 
   liveModeBtn.addEventListener("click", () => setMode("live"));
@@ -1130,8 +1188,13 @@ function init(): void {
       addBubble("assistant", "Load a Reddit thread first by clicking **Load thread from page**.");
       return;
     }
-    const { apiKey } = (await chrome.storage.local.get("apiKey")) as { apiKey?: string };
-    if (!apiKey) { addBubble("assistant", "No API key set. Click \u2699 to add your Anthropic API key."); return; }
+    const { apiKey, geminiApiKey } = (await chrome.storage.local.get(["apiKey", "geminiApiKey"])) as { apiKey?: string; geminiApiKey?: string };
+
+    if (modelProvider === "gemini") {
+      if (!geminiApiKey) { addBubble("assistant", "No Gemini API key set. Click \u2699 to add your Google API key."); return; }
+    } else {
+      if (!apiKey) { addBubble("assistant", "No API key set. Click \u2699 to add your Anthropic API key."); return; }
+    }
 
     // Instruction is only active when the toggle is on
     const instruction = instructionActive ? input.value.trim() : "";
@@ -1147,8 +1210,10 @@ function init(): void {
     const out = addBubble("assistant", "\u2026");
     generateBtn.disabled = true;
 
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), STREAM_TIMEOUT_MS);
+
     try {
-      const client = getClient(apiKey);
       const firstThreadCall = !threadSummary.trim();
       const system = buildSystemPrompt(thread, activeGoal, apiMessage, {
         summary: firstThreadCall ? conversationSummary : threadSummary,
@@ -1157,8 +1222,13 @@ function init(): void {
         includeComments,
       });
 
+      const stream =
+        modelProvider === "gemini"
+          ? streamReplyGemini(getGeminiClient(geminiApiKey!), system, history, controller.signal)
+          : streamReply(getClient(apiKey!), system, history, controller.signal);
+
       let acc = "";
-      for await (const delta of streamReply(client, system, history)) {
+      for await (const delta of stream) {
         acc += delta;
         const { visibleText } = parseThreadSummaryBlock(acc);
         renderStructuredDrafts(out, visibleText || "\u2026");
@@ -1201,8 +1271,13 @@ function init(): void {
       truncateConversationSummary(apiMessage, finalText);
       await saveCurrentConversation();
     } catch (e) {
-      out.textContent = `Error: ${e instanceof Error ? e.message : String(e)}`;
+      if (e instanceof Error && e.name === "AbortError") {
+        out.textContent = "Request timed out — something went wrong. Try again or refresh the page.";
+      } else {
+        out.textContent = `Error: ${e instanceof Error ? e.message : String(e)}`;
+      }
     } finally {
+      window.clearTimeout(timeoutId);
       generateBtn.disabled = false;
     }
   }
@@ -1233,6 +1308,7 @@ function init(): void {
   });
 
   void loadIncludeCommentsPreference();
+  void loadModelPreference();
   void loadGoals();
   void renderHistoryList();
   setMode("live");

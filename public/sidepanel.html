@@ -38,10 +38,16 @@
 
   <footer id="composer">
     <div id="composer-options">
-      <label id="comment-toggle" for="include-comments" title="When off, drafts focus on DMs only">
-        <input id="include-comments" type="checkbox" checked />
-        <span>Include comments</span>
-      </label>
+      <div id="composer-left">
+        <select id="model-select" aria-label="AI model" title="Select AI model">
+          <option value="claude">Claude Sonnet 4.5</option>
+          <option value="gemini">Gemini 3.5 Flash</option>
+        </select>
+        <label id="comment-toggle" for="include-comments" title="When off, drafts focus on DMs only">
+          <input id="include-comments" type="checkbox" checked />
+          <span>Include comments</span>
+        </label>
+      </div>
       <button id="instruction-toggle" type="button">+ Instruction</button>
     </div>
     <textarea id="input" rows="2" class="hidden" placeholder="e.g. DMs only · focus on u/someuser · skip OP"></textarea>

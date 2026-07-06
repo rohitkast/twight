@@ -259,10 +259,33 @@ header button {
 }
 
 .history-page-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   font-size: 12px;
   color: #6c7583;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+.history-clear-all {
+  background: none;
+  border: 1px solid #d8dde5;
+  border-radius: 6px;
+  font: inherit;
+  font-size: 11px;
+  color: #7c8593;
+  padding: 2px 8px;
+  cursor: pointer;
+  text-transform: none;
+  letter-spacing: 0;
+  flex-shrink: 0;
+}
+
+.history-clear-all:hover {
+  background: #fff0ee;
+  border-color: #ffc6ae;
+  color: #8f2f00;
 }
 
 .history-page-list {
@@ -685,6 +708,12 @@ footer {
   justify-content: space-between;
 }
 
+#composer-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 #instruction-toggle {
   background: none;
   border: 1px dashed #d0d5dd;
@@ -737,6 +766,25 @@ footer {
 
 #comment-toggle:not(.active) {
   opacity: 0.7;
+}
+
+#model-select {
+  padding: 3px 6px;
+  border: 1px solid #d8dde5;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 12px;
+  color: #7c8593;
+  background: #f7f8fa;
+  cursor: pointer;
+  flex-shrink: 0;
+  max-width: 130px;
+}
+
+#model-select:focus {
+  outline: none;
+  border-color: #ffc6ae;
+  color: #333;
 }
 
 #input {

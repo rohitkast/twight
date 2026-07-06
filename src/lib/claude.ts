@@ -250,6 +250,7 @@ export async function* streamReply(
   client: Anthropic,
   system: string,
   history: ChatTurn[],
+  signal?: AbortSignal,
 ): AsyncGenerator<string> {
   // Trim old turns to keep input tokens low; full history is kept in UI memory
   const trimmed =
@@ -262,7 +263,7 @@ export async function* streamReply(
     max_tokens: 1400,
     system: [{ type: "text", text: system, cache_control: { type: "ephemeral" as const } }],
     messages: trimmed.map((t) => ({ role: t.role, content: t.content })),
-  });
+  }, { signal });
 
   for await (const event of stream) {
     if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
