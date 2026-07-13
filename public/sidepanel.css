@@ -987,3 +987,132 @@ footer {
   padding: 6px 8px;
   border-radius: 6px;
 }
+
+/* ---- Feedback modal ---- */
+
+#feedback-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.42);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 10000;
+  padding: 16px;
+}
+
+#feedback-overlay.hidden {
+  display: none;
+}
+
+#feedback-card {
+  background: #fff;
+  border-radius: 14px;
+  padding: 18px 16px 14px;
+  width: 100%;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.18);
+}
+
+.feedback-heading {
+  font-weight: 700;
+  font-size: 15px;
+  margin: 0 0 4px;
+}
+
+.feedback-sub {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0 0 12px;
+}
+
+#feedback-moods {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.mood-btn {
+  padding: 8px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  transition: border-color 0.12s, background 0.12s;
+}
+
+.mood-btn:hover {
+  background: #fafafa;
+}
+
+.mood-btn.selected {
+  border-color: var(--accent);
+  background: #fff3ee;
+  color: #8f2f00;
+}
+
+#feedback-text {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 9px;
+  font: inherit;
+  font-size: 13px;
+  resize: none;
+  box-sizing: border-box;
+  margin-bottom: 12px;
+}
+
+#feedback-text:focus {
+  outline: none;
+  border-color: #aaa;
+}
+
+.feedback-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+#feedback-send {
+  flex: 1;
+  padding: 8px 12px;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+#feedback-send:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+#feedback-send:not(:disabled):hover {
+  background: #e03e00;
+}
+
+#feedback-later {
+  padding: 8px 10px;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+  white-space: nowrap;
+}
+
+#feedback-later:hover {
+  color: var(--fg);
+}

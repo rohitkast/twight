@@ -54,6 +54,24 @@
     <button id="generate-btn">Generate</button>
   </footer>
 
+  <!-- Feedback modal -->
+  <div id="feedback-overlay" class="hidden" role="dialog" aria-modal="true" aria-labelledby="feedback-title">
+    <div id="feedback-card">
+      <p id="feedback-title" class="feedback-heading">Quick question 👋</p>
+      <p class="feedback-sub">We're building this in the open — would love to know where you're at!</p>
+      <div id="feedback-moods">
+        <button type="button" class="mood-btn" data-mood="Loving it 🙌">Loving it 🙌</button>
+        <button type="button" class="mood-btn" data-mood="It's okay 🤔">It's okay 🤔</button>
+        <button type="button" class="mood-btn" data-mood="Not for me 🚫">Not for me 🚫</button>
+      </div>
+      <textarea id="feedback-text" rows="2" placeholder="Anything specific? (optional)"></textarea>
+      <div class="feedback-actions">
+        <button id="feedback-send" type="button" disabled>Send anonymously</button>
+        <button id="feedback-later" type="button">Maybe later</button>
+      </div>
+    </div>
+  </div>
+
   <script src="sidepanel.js"></script>
 </body>
 

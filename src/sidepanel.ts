@@ -42,6 +42,16 @@ const TRACKED_USERS_WARN_THRESHOLD = 30;
 const TRACKED_USERS_MAX = 50;
 const ITEM_OPEN = "<ITEM>";
 const ITEM_CLOSE = "</ITEM>";
+const FEEDBACK_STATE_KEY = "feedbackState";
+const FEEDBACK_WEBHOOK = "https://discord.com/api/webhooks/1523667772339519519/T5CZ076q-EKJjAopvpcwYVhzNA2L2M4tZ3kiqyf4dIA7RO-RBaBXnyvUEO89_Gfeu3tH";
+const MAX_FEEDBACK_SESSIONS = 3;
+
+interface FeedbackState {
+  submitted: boolean;
+  sessionsTried: number;
+}
+
+let shownFeedbackThisSession = false;
 
 interface TrackedUser {
   id: string;
@@ -588,6 +598,23 @@ function wireCopyButton(bubble: HTMLElement, fallbackContent: string): void {
   bubble.appendChild(btn);
 }
 
+// ---- Feedback helpers ----
+
+async function loadFeedbackState(): Promise<FeedbackState> {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(FEEDBACK_STATE_KEY, (result) => {
+      const s = result[FEEDBACK_STATE_KEY] as FeedbackState | undefined;
+      resolve(s ?? { submitted: false, sessionsTried: 0 });
+    });
+  });
+}
+
+async function saveFeedbackState(state: FeedbackState): Promise<void> {
+  return new Promise((resolve) => {
+    chrome.storage.local.set({ [FEEDBACK_STATE_KEY]: state }, resolve);
+  });
+}
+
 // ---- init ----
 
 function init(): void {
@@ -611,6 +638,11 @@ function init(): void {
   const modelSelect = document.getElementById("model-select") as HTMLSelectElement | null;
   const chatlistBtn = document.getElementById("chatlist-btn") as HTMLButtonElement;
   const composerOptions = document.getElementById("composer-options") as HTMLElement;
+  const feedbackOverlay = document.getElementById("feedback-overlay") as HTMLElement;
+  const feedbackSendBtn = document.getElementById("feedback-send") as HTMLButtonElement;
+  const feedbackLaterBtn = document.getElementById("feedback-later") as HTMLButtonElement;
+  const feedbackTextarea = document.getElementById("feedback-text") as HTMLTextAreaElement;
+  const moodBtns = Array.from(feedbackOverlay.querySelectorAll<HTMLButtonElement>(".mood-btn"));
 
   let mode: "live" | "history-list" | "history-detail" | "chatlist-list" | "chatlist-detail" = "live";
   let includeComments = true;
@@ -618,6 +650,7 @@ function init(): void {
   let instructionActive = false;
   let selectedHistoryPostKey: string | null = null;
   let currentTrackedUser: TrackedUser | null = null;
+  let selectedMood: string | null = null;
 
   function updateCommentToggleVisualState(): void {
     if (!commentToggle) return;
@@ -1270,6 +1303,7 @@ function init(): void {
 
       truncateConversationSummary(apiMessage, finalText);
       await saveCurrentConversation();
+      void maybeShowFeedbackModal();
     } catch (e) {
       if (e instanceof Error && e.name === "AbortError") {
         out.textContent = "Request timed out — something went wrong. Try again or refresh the page.";
@@ -1306,6 +1340,49 @@ function init(): void {
       else { void send(); }
     }
   });
+
+  // ---- Feedback modal wiring ----
+
+  for (const btn of moodBtns) {
+    btn.addEventListener("click", () => {
+      for (const b of moodBtns) b.classList.remove("selected");
+      btn.classList.add("selected");
+      selectedMood = btn.dataset.mood ?? null;
+      feedbackSendBtn.disabled = !selectedMood;
+    });
+  }
+
+  feedbackSendBtn.addEventListener("click", () => {
+    if (!selectedMood) return;
+    const message = feedbackTextarea.value.trim();
+    feedbackOverlay.classList.add("hidden");
+    const content = `📬 **Feedback — Reddit Reply Assistant**\n**Mood:** ${selectedMood}${message ? `\n**Note:** ${message}` : ""}`;
+    void fetch(FEEDBACK_WEBHOOK, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content }),
+    }).catch(() => { /* silently ignore network errors */ });
+    void saveFeedbackState({ submitted: true, sessionsTried: MAX_FEEDBACK_SESSIONS });
+  });
+
+  feedbackLaterBtn.addEventListener("click", () => {
+    feedbackOverlay.classList.add("hidden");
+    void loadFeedbackState().then((state) =>
+      saveFeedbackState({ ...state, sessionsTried: state.sessionsTried + 1 }),
+    );
+  });
+
+  async function maybeShowFeedbackModal(): Promise<void> {
+    if (shownFeedbackThisSession) return;
+    const state = await loadFeedbackState();
+    if (state.submitted || state.sessionsTried >= MAX_FEEDBACK_SESSIONS) return;
+    shownFeedbackThisSession = true;
+    selectedMood = null;
+    feedbackSendBtn.disabled = true;
+    for (const b of moodBtns) b.classList.remove("selected");
+    feedbackTextarea.value = "";
+    feedbackOverlay.classList.remove("hidden");
+  }
 
   void loadIncludeCommentsPreference();
   void loadModelPreference();

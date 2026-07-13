@@ -1,21 +1,22 @@
 {
   "manifest_version": 3,
   "name": "Twight",
-  "version": "0.1.3",
-  "description": "Reads a Reddit post + comments and drafts tailored replies and DMs with Claude.",
+  "version": "0.1.5",
+  "description": "Reads a Reddit post + comments and drafts tailored replies and DMs with Claude or Gemini.",
   "permissions": [
     "storage",
     "sidePanel"
   ],
   "host_permissions": [
     "https://*.reddit.com/*",
-    "https://api.anthropic.com/*"
+    "https://api.anthropic.com/*",
+    "https://generativelanguage.googleapis.com/*"
   ],
   "background": {
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "Twight"
+    "default_title": "Twight (Beta)"
   },
   "side_panel": {
     "default_path": "sidepanel.html"
