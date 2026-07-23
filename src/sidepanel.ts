@@ -766,8 +766,27 @@ function init(): void {
 
     if (isLive) {
       renderLiveSummary();
-      if (history.length === 0) { chat.innerHTML = ""; } else { renderTranscript(history); }
+      if (history.length === 0) {
+        chat.innerHTML = "";
+        if (!hasLoaded) renderOnboarding();
+      } else {
+        renderTranscript(history);
+      }
     }
+  }
+
+  function renderOnboarding(): void {
+    const card = document.createElement("div");
+    card.className = "onboarding-card";
+    card.innerHTML =
+      `<p class="onboarding-title">Get started</p>` +
+      `<ol class="onboarding-steps">` +
+      `<li><strong>Add your API key</strong> &mdash; click <strong>&#9881;</strong> (top right) and paste your Claude or Gemini key.</li>` +
+      `<li><strong>Open a Reddit post</strong> where your target users are active, then click <strong>Load thread from page</strong> above.</li>` +
+      `<li><strong>Select a goal &amp; hit Generate</strong> &mdash; the AI will draft replies, comments, or DMs tailored to the thread.</li>` +
+      `<li><strong>Pick the best draft.</strong> For DMs, click <strong>Save</strong> &mdash; if they reply, open <strong>Chat List</strong> to continue the conversation with full thread context.</li>` +
+      `</ol>`;
+    chat.appendChild(card);
   }
 
   async function renderHistoryList(): Promise<void> {

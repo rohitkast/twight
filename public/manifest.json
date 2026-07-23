@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Twight",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Reads a Reddit post + comments and drafts tailored replies and DMs with Claude or Gemini.",
   "permissions": [
     "storage",
