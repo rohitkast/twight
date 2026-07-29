@@ -397,10 +397,12 @@ function renderDraftFeed(
     const head = document.createElement("div");
     head.className = "draft-head";
 
+    const ICON_CHEVRON_RIGHT = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" width="12" height="12"><path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" /></svg>`;
+    const ICON_CHEVRON_DOWN = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" width="12" height="12"><path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" /></svg>`;
     const toggleBtn = document.createElement("button");
     toggleBtn.type = "button";
-    toggleBtn.className = "draft-toggle";
-    toggleBtn.textContent = "\u25B8";
+    toggleBtn.className = "btn btn-xs btn-ghost btn-square";
+    toggleBtn.innerHTML = ICON_CHEVRON_RIGHT;
     toggleBtn.setAttribute("aria-label", "Expand draft");
     toggleBtn.setAttribute("aria-expanded", "false");
     head.appendChild(toggleBtn);
@@ -444,7 +446,7 @@ function renderDraftFeed(
     actions.className = "draft-actions";
     const copyBtn = document.createElement("button");
     copyBtn.type = "button";
-    copyBtn.className = "draft-copy";
+    copyBtn.className = "btn btn-xs btn-ghost";
     copyBtn.textContent = "Copy";
     copyBtn.setAttribute("aria-label", `Copy ${draftKindLabel(draft.kind)} draft`);
     copyBtn.addEventListener("click", (e) => {
@@ -457,7 +459,7 @@ function renderDraftFeed(
     if (onSave && draft.targetUser) {
       const saveBtn = document.createElement("button");
       saveBtn.type = "button";
-      saveBtn.className = "draft-save";
+      saveBtn.className = "btn btn-xs btn-primary";
       saveBtn.textContent = "Save";
       saveBtn.setAttribute("aria-label", `Save draft for u/${draft.targetUser} to chat list`);
       saveBtn.addEventListener("click", (e) => {
@@ -469,7 +471,7 @@ function renderDraftFeed(
 
       const helpBtn = document.createElement("button");
       helpBtn.type = "button";
-      helpBtn.className = "draft-help";
+      helpBtn.className = "btn btn-xs btn-circle btn-ghost";
       helpBtn.textContent = "?";
       helpBtn.setAttribute("aria-label", "How does Save work?");
       helpBtn.addEventListener("click", (e) => {
@@ -506,7 +508,7 @@ function renderDraftFeed(
 
     const setExpanded = (expanded: boolean): void => {
       card.classList.toggle("collapsed", !expanded);
-      toggleBtn.textContent = expanded ? "\u25BE" : "\u25B8";
+      toggleBtn.innerHTML = expanded ? ICON_CHEVRON_DOWN : ICON_CHEVRON_RIGHT;
       toggleBtn.setAttribute("aria-expanded", expanded ? "true" : "false");
       toggleBtn.setAttribute("aria-label", expanded ? "Collapse draft" : "Expand draft");
     };
@@ -812,7 +814,7 @@ function init(): void {
     }
 
     const clearAllBtn = document.createElement("button");
-    clearAllBtn.className = "history-clear-all";
+    clearAllBtn.className = "btn btn-xs btn-ghost";
     clearAllBtn.type = "button";
     clearAllBtn.textContent = "Clear all";
     clearAllBtn.addEventListener("click", async () => {
@@ -848,10 +850,11 @@ function init(): void {
         renderTranscript((item.turns || []) as ConversationTurn[]);
       });
 
+      const ICON_TRASH = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="14" height="14"><path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>`;
       const deleteBtn = document.createElement("button");
-      deleteBtn.className = "history-delete";
+      deleteBtn.className = "btn btn-sm btn-ghost btn-square btn-error";
       deleteBtn.type = "button";
-      deleteBtn.textContent = "\uD83D\uDDD1";
+      deleteBtn.innerHTML = ICON_TRASH;
       deleteBtn.title = "Delete saved chat";
       deleteBtn.setAttribute("aria-label", "Delete saved chat");
       deleteBtn.addEventListener("click", async (e) => {
@@ -905,7 +908,7 @@ function init(): void {
     }
 
     const clearAllBtn = document.createElement("button");
-    clearAllBtn.className = "history-clear-all";
+    clearAllBtn.className = "btn btn-xs btn-ghost";
     clearAllBtn.type = "button";
     clearAllBtn.textContent = "Clear all";
     clearAllBtn.addEventListener("click", async () => {
@@ -940,10 +943,11 @@ function init(): void {
 
       openBtn.addEventListener("click", () => { renderChatListDetail(user); });
 
+      const ICON_TRASH_CHAT = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="14" height="14"><path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>`;
       const deleteBtn = document.createElement("button");
-      deleteBtn.className = "history-delete";
+      deleteBtn.className = "btn btn-sm btn-ghost btn-square btn-error";
       deleteBtn.type = "button";
-      deleteBtn.textContent = "\uD83D\uDDD1";
+      deleteBtn.innerHTML = ICON_TRASH_CHAT;
       deleteBtn.title = "Remove from chat list";
       deleteBtn.setAttribute("aria-label", "Remove from chat list");
       deleteBtn.addEventListener("click", async (e) => {

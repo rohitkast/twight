@@ -7,9 +7,10 @@ Reddit Reply Assistant is a Chrome extension that helps founders, freelancers, a
 The extension:
 - Reads the current Reddit post and its comments from the active tab
 - Lets the user describe their goal (e.g. "find freelance clients for UI audits")
-- Sends the thread + goal to Claude (Anthropic API) and streams back 1–6 tailored draft replies, comments, or DMs
+- Sends the thread + goal to Claude (Anthropic API) or Gemini (Google AI) and streams back 1–6 tailored draft replies, comments, or DMs
 - Presents each draft as a collapsible card the user can expand, read, copy, and send manually
 - Saves every conversation by post URL so the user can review past drafts in a History tab
+- Lets users save DMs with full context (post title, subreddit, target username) so they can return and generate a contextual follow-up reply when the other user responds
 
 The tone philosophy is central: Claude is instructed to sound like a real Reddit user — grounded in what specific people wrote, matching the subreddit's culture, never generic marketing language.
 
@@ -22,12 +23,26 @@ The tone philosophy is central: Claude is instructed to sound like a real Reddit
 | Extension platform | Chrome MV3 (Manifest Version 3) |
 | Language | TypeScript |
 | Build | esbuild via `build.mjs` — outputs to `dist/` |
-| AI | Anthropic SDK (`@anthropic-ai/sdk`), model `claude-sonnet-4-5`, streaming |
+| AI | Anthropic SDK (`@anthropic-ai/sdk`), model `claude-sonnet-4-5`, streaming; Google AI SDK (`@google/generative-ai`) via `lib/gemini.ts`, model `gemini-2.0-flash` |
 | Markdown | `marked` library for fallback assistant bubble rendering |
 | Storage | `chrome.storage.local` — API key, goals, chat history |
 
 Build command: `npm run build`
 Output: `dist/` (all HTML/CSS/JS assets ready to load as unpacked extension)
+
+---
+
+## Saved DM Follow-up Feature
+
+When a user sends a DM to a Reddit user, they can save that DM from the extension. The saved record stores:
+- The target username
+- The DM title and text that was sent
+- The originating post's URL, title, and subreddit
+- A short context summary of why the user was contacted
+
+When the user returns later (because the target replied), they open the saved DM and ask for a follow-up. The AI receives the full original context — post, initial DM, and the new reply — and drafts a natural follow-up that continues the conversation without re-introducing or sounding like a bot.
+
+Saved DMs are persisted in `chrome.storage.local` under a dedicated key, separate from conversation history.
 
 ---
 
