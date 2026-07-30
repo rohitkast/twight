@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description"
+    content="Twight helps you find potential users and clients in Reddit threads, draft replies and DMs from your goals, and follow up with full context." />
+  <title>Twight · Reddit Reply Assistant</title>
+  <link rel="icon" href="assets/icon-128.png" type="image/png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@5/themes.css" rel="stylesheet" type="text/css" />
+  <link rel="stylesheet" href="../public/rra-tokens.css" />
+  <link rel="stylesheet" href="../public/sidepanel.css" />
+  <link rel="stylesheet" href="styles/landing.css" />
+</head>
+
+<body class="lp">
+  <nav class="lp-nav">
+    <div class="lp-wrap lp-nav-inner">
+      <a class="lp-logo" href="#">
+        <img src="assets/icon-128.png" width="36" height="36" alt="" />
+        <span class="lp-logo-text">
+          <strong>Twight</strong>
+          <span>Reddit Reply Assistant</span>
+        </span>
+      </a>
+      <a class="lp-nav-cta"
+        href="https://chromewebstore.google.com/detail/fpoaifndhjgaicoghecihpekgnhbiffb?utm_source=item-share-cb"
+        rel="noopener noreferrer">Add to Chrome</a>
+    </div>
+  </nav>
+
+  <header class="lp-hero">
+    <div class="lp-wrap lp-hero-grid">
+      <div>
+        <span class="lp-eyebrow">Chrome extension · Beta</span>
+        <h1>Find users and clients from a Reddit thread.</h1>
+        <p class="lp-lead">
+          Open a Reddit post, load the thread, and set a goal. Twight drafts replies and DMs for the people who match
+          that goal, whether you’re chasing early users or clients. Copy a draft, edit if you want, and send on Reddit
+          yourself. Nothing posts automatically.
+        </p>
+        <div class="lp-hero-actions">
+          <a class="lp-btn-primary"
+            href="https://chromewebstore.google.com/detail/fpoaifndhjgaicoghecihpekgnhbiffb?utm_source=item-share-cb"
+            rel="noopener noreferrer">Install from Chrome Web Store</a>
+          <a class="lp-btn-ghost" href="#how-it-works">How it works</a>
+        </div>
+        <p class="lp-note">Works on reddit.com · Bring your own Claude or Gemini API key</p>
+      </div>
+
+      <div class="lp-browser" aria-hidden="true">
+        <div class="lp-browser-chrome">
+          <div class="lp-dots" aria-hidden="true"><i></i><i></i><i></i></div>
+          <div class="lp-url">reddit.com/r/SaaS/comments/…</div>
+        </div>
+        <div class="lp-browser-stage">
+          <div class="lp-reddit-bg">
+            <div class="lp-reddit-fake">
+              <div class="sub">r/SaaS</div>
+              <h3>How did you get your first 10 paying customers?</h3>
+              <p>Posted by u/buildinpublic_ria · 47 comments</p>
+            </div>
+          </div>
+          <div class="lp-panel-slot">
+            <div class="rra-app mock-panel mock-static" role="img" aria-label="Twight side panel preview">
+              <header>
+                <div class="brand">
+                  <span class="title">Twight</span>
+                  <span class="subtitle">Reddit Reply Assistant</span>
+                </div>
+                <div class="header-actions">
+                  <button type="button" class="btn btn-ghost btn-square btn-sm" tabindex="-1" aria-hidden="true">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                      stroke="currentColor" width="17" height="17">
+                      <path stroke-linecap="round" stroke-linejoin="round"
+                        d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z" />
+                    </svg>
+                  </button>
+                  <button type="button" class="btn btn-ghost btn-square btn-sm" tabindex="-1" aria-hidden="true">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                      stroke="currentColor" width="17" height="17">
+                      <path stroke-linecap="round" stroke-linejoin="round"
+                        d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22-.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z" />
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                    </svg>
+                  </button>
+                </div>
+              </header>
+              <section id="context" class="mock-compact">
+                <div id="mode-bar">
+                  <button type="button" class="mode-btn btn btn-sm active">Live chat</button>
+                  <button type="button" class="mode-btn btn btn-sm">History</button>
+                </div>
+                <div id="goal-bar">
+                  <select class="select select-sm" aria-hidden="true" tabindex="-1">
+                    <option>Find beta users for my B2B tool</option>
+                  </select>
+                </div>
+                <div id="load-bar">
+                  <button type="button" class="btn btn-sm">Reload thread</button>
+                </div>
+                <div id="thread-summary" class="thread-loaded"><strong>How did you get your first 10 paying customers?</strong><br />r/SaaS · u/buildinpublic_ria · 16 comments</div>
+              </section>
+              <main id="chat" class="mock-chat">
+                <div class="bubble user">DMs for people still hunting for a solution. Skip generic advice comments.</div>
+                <div class="bubble assistant structured">
+                  <div class="draft-feed">
+                    <article class="draft-card dm">
+                      <div class="draft-head">
+                        <button type="button" class="btn btn-xs btn-ghost btn-square" tabindex="-1" aria-hidden="true">
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2"
+                            stroke="currentColor" width="12" height="12">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                          </svg>
+                        </button>
+                        <span class="draft-badge dm">DM</span>
+                        <div class="draft-title">Follow-up on their comment</div>
+                        <button type="button" class="draft-target" tabindex="-1">u/launchday_marc</button>
+                      </div>
+                      <div class="draft-content">
+                        <div class="draft-text">Hey, saw your comment about looking for onboarding email tooling without a full marketing stack. I built something lightweight after the same struggle in r/SaaS threads. Happy to share what worked for our first 8 users if useful. Want a short Loom?</div>
+                        <p class="draft-rationale">References their comment about email tooling; offers value first.</p>
+                        <div class="draft-actions">
+                          <button type="button" class="btn btn-xs btn-ghost">Copy</button>
+                          <button type="button" class="btn btn-xs btn-primary">Save</button>
+                        </div>
+                      </div>
+                    </article>
+                    <article class="draft-card reply collapsed">
+                      <div class="draft-head">
+                        <button type="button" class="btn btn-xs btn-ghost btn-square" tabindex="-1" aria-hidden="true">
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2"
+                            stroke="currentColor" width="12" height="12">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                          </svg>
+                        </button>
+                        <span class="draft-badge reply">Reply</span>
+                        <div class="draft-title">Share your channel story</div>
+                      </div>
+                      <div class="draft-preview">We got our first ten from Reddit too, mostly by showing up in threads like this with specifics, not links…</div>
+                    </article>
+                    <article class="draft-card comment collapsed">
+                      <div class="draft-head">
+                        <button type="button" class="btn btn-xs btn-ghost btn-square" tabindex="-1" aria-hidden="true">
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2"
+                            stroke="currentColor" width="12" height="12">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                          </svg>
+                        </button>
+                        <span class="draft-badge comment">Comment</span>
+                        <div class="draft-title">Add your experience</div>
+                      </div>
+                      <div class="draft-preview">First 10 for us were DMs after useful comments. Took about six weeks.</div>
+                    </article>
+                  </div>
+                </div>
+              </main>
+              <footer>
+                <button type="button" class="btn btn-primary btn-block" tabindex="-1">Generate</button>
+              </footer>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <section class="lp-section alt" id="follow-up">
+    <div class="lp-wrap lp-split">
+      <div>
+        <h2>Follow up without losing context</h2>
+        <ul class="lp-steps">
+          <li>
+            <span class="num">1</span>
+            <div><strong>Save</strong><span>Track u/launchday_marc from your first DM. Chat List keeps the thread, your outreach, and your goal.</span></div>
+          </li>
+          <li>
+            <span class="num">2</span>
+            <div><strong>Paste their reply</strong><span>Tell Twight what they said and what you want next, like engage then pitch.</span></div>
+          </li>
+          <li>
+            <span class="num">3</span>
+            <div><strong>Send your way</strong><span>Get a follow-up draft. Copy it, edit if you want, send on Reddit yourself.</span></div>
+          </li>
+        </ul>
+      </div>
+      <div class="lp-follow-mock">
+        <div class="rra-app mock-panel mock-static" role="img" aria-label="Chat List follow-up preview">
+          <header>
+            <div class="brand">
+              <span class="title">Twight</span>
+              <span class="subtitle">Reddit Reply Assistant</span>
+            </div>
+            <div class="header-actions">
+              <button type="button" class="btn btn-ghost btn-square btn-sm" title="Back" tabindex="-1" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2"
+                  stroke="currentColor" width="16" height="16">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 19.5 3 12m0 0 7.5-7.5M3 12h18" />
+                </svg>
+              </button>
+              <button type="button" id="chatlist-btn" class="btn btn-ghost btn-square btn-sm active" tabindex="-1"
+                aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                  stroke="currentColor" width="17" height="17">
+                  <path stroke-linecap="round" stroke-linejoin="round"
+                    d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 0 1 8.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0 1 11.964-3.07M12 6.375a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0Zm8.25 2.25a2.625 2.625 0 1 1-5.25 0 2.625 2.625 0 0 1 5.25 0Z" />
+                </svg>
+              </button>
+              <button type="button" class="btn btn-ghost btn-square btn-sm" tabindex="-1" aria-hidden="true">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5"
+                  stroke="currentColor" width="17" height="17">
+                  <path stroke-linecap="round" stroke-linejoin="round"
+                    d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 0 1 1.37.49l1.296 2.247a1.125 1.125 0 0 1-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 0 1 0 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 0 1-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 0 1-.22-.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 0 1-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 0 1-1.369-.49l-1.297-2.247a1.125 1.125 0 0 1 .26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 0 1 0-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 0 1-.26-1.43l1.297-2.247a1.125 1.125 0 0 1 1.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28Z" />
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+                </svg>
+              </button>
+            </div>
+          </header>
+          <main id="chat" class="mock-chat" style="padding-top: 12px;">
+            <div class="chatlist-context-card">
+              <div class="chatlist-context-header">
+                <span class="draft-badge dm">DM</span> to <strong>u/launchday_marc</strong> · <span class="muted">r/SaaS</span>
+              </div>
+              <div class="chatlist-orig-label">Your outreach:</div>
+              <div class="chatlist-original-draft">Hey, saw your comment about onboarding email tooling. Happy to share what worked for our first 8 users if useful.</div>
+            </div>
+            <div class="bubble user">They replied: “Yeah that’d help. We’re fixing onboarding this month. Do you consult or is it just your product?”</div>
+            <div class="bubble user">What next? Engage naturally, answer their question, then softly pitch my UX audit. No hard sell.</div>
+            <div class="bubble assistant structured">
+              <div class="draft-feed">
+                <article class="draft-card dm">
+                  <div class="draft-head">
+                    <button type="button" class="btn btn-xs btn-ghost btn-square" tabindex="-1" aria-hidden="true">
+                      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2"
+                        stroke="currentColor" width="12" height="12">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />
+                      </svg>
+                    </button>
+                    <span class="draft-badge dm">DM</span>
+                    <div class="draft-title">Answer + soft pitch</div>
+                  </div>
+                  <div class="draft-content">
+                    <div class="draft-text">Both, actually. The product grew out of the audits I did for early-stage teams. For onboarding I usually do a 90-minute teardown of signup to first value, with a prioritized fix list. Happy to do a quick call next week, or I can send the Loom with no strings.</div>
+                    <p class="draft-rationale">Answers consult vs product, keeps tone helpful, offer is optional.</p>
+                    <div class="draft-actions">
+                      <button type="button" class="btn btn-xs btn-ghost">Copy</button>
+                    </div>
+                  </div>
+                </article>
+              </div>
+            </div>
+          </main>
+          <footer>
+            <button type="button" class="btn btn-primary btn-block" tabindex="-1">Generate</button>
+          </footer>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="lp-section" id="use-cases">
+    <div class="lp-wrap">
+      <h2>Two ways people use Twight</h2>
+      <p class="lp-section-intro">Same workflow. Different goals. Click a card to install the extension.</p>
+      <div class="lp-hooks">
+        <a class="lp-hook-card"
+          href="https://chromewebstore.google.com/detail/fpoaifndhjgaicoghecihpekgnhbiffb?utm_source=item-share-cb"
+          rel="noopener noreferrer">
+          <span class="tag">Founders &amp; indie hackers</span>
+          <h3>Find early users</h3>
+          <ul class="lp-card-bullets">
+            <li>Find threads where your ideal users already comment</li>
+            <li>Set a goal like “beta users for my B2B tool”</li>
+            <li>Get replies, comments, and DMs that sound like a real Redditor</li>
+            <li>Choose who to contact and send only what you’re happy with</li>
+            <li>Save DMs and follow up when they reply</li>
+          </ul>
+        </a>
+        <a class="lp-hook-card"
+          href="https://chromewebstore.google.com/detail/fpoaifndhjgaicoghecihpekgnhbiffb?utm_source=item-share-cb"
+          rel="noopener noreferrer">
+          <span class="tag">Freelancers &amp; consultants</span>
+          <h3>Find clients</h3>
+          <ul class="lp-card-bullets">
+            <li>Spot people asking for help you can actually deliver</li>
+            <li>Set a goal around your service (audits, consulting, freelance work)</li>
+            <li>Draft outreach that helps first, pitches second</li>
+            <li>Track conversations in Chat List with full thread context</li>
+            <li>Paste their reply and shape the next message before you pitch</li>
+          </ul>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <section class="lp-section alt" id="how-it-works">
+    <div class="lp-wrap lp-split">
+      <div>
+        <h2>How it works</h2>
+        <p class="lp-section-intro">Twight is a side panel on Reddit. It is not a bot that posts for you.</p>
+      </div>
+      <ol class="lp-steps">
+        <li>
+          <span class="num">1</span>
+          <div><strong>Add your API key</strong><span>Open settings and paste your Claude or Gemini key. Keys stay in
+              your browser.</span></div>
+        </li>
+        <li>
+          <span class="num">2</span>
+          <div><strong>Load the thread</strong><span>On any post, click Load thread from page to pull the post and
+              comments.</span></div>
+        </li>
+        <li>
+          <span class="num">3</span>
+          <div><strong>Set a goal &amp; generate</strong><span>Pick who to focus on, review drafts, copy and send
+              yourself.</span></div>
+        </li>
+        <li>
+          <span class="num">4</span>
+          <div><strong>Follow up from Chat List</strong><span>Save DMs, paste replies later, and keep full thread
+              context.</span></div>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <section class="lp-cta-band">
+    <h2>Ready to try it on a real thread?</h2>
+    <p>Install Twight, open a Reddit post, and generate your first drafts in minutes.</p>
+    <a class="lp-btn-primary"
+      href="https://chromewebstore.google.com/detail/fpoaifndhjgaicoghecihpekgnhbiffb?utm_source=item-share-cb"
+      rel="noopener noreferrer">Add to Chrome (free)</a>
+  </section>
+
+  <footer class="lp-footer">
+    <div class="lp-wrap">
+      <p>Twight · Reddit Reply Assistant · Not affiliated with Reddit, Inc.</p>
+      <p><a href="https://rohitkast.github.io/twight-privacy-policy/">Privacy policy</a></p>
+    </div>
+  </footer>
+</body>
+
+</html>

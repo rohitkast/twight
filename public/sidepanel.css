@@ -1,20 +1,4 @@
-:root {
-  --bg: #ffffff;
-  --fg: #1a1a1b;
-  --muted: #7c7c7c;
-  --border: #e3e3e3;
-  --accent: #ff4500;
-  --user: #f0f4ff;
-  --assistant: #f6f7f8;
-}
-
-/* ---- daisyUI theme overrides ---- */
-[data-theme="light"],
-:root[data-theme="light"] {
-  --color-primary: oklch(62% 0.24 30);
-  --color-primary-content: oklch(98% 0.01 100);
-  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-}
+@import url("rra-tokens.css");
 
 * {
   box-sizing: border-box;
@@ -25,31 +9,52 @@ html {
   height: 100%;
 }
 
-body {
+body.rra-app,
+.rra-app {
   margin: 0;
-  height: 100%;
-  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: var(--rra-font);
   font-size: 14px;
   line-height: 1.5;
-  color: var(--fg);
-  background: var(--bg);
+  color: var(--rra-fg);
+  background: var(--rra-bg);
   display: flex;
   flex-direction: column;
+  min-height: 0;
+}
+
+body.rra-app {
   height: 100vh;
 }
 
-header {
+.rra-app header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border);
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--rra-border);
+  background: var(--rra-surface-raised);
+  flex-shrink: 0;
 }
 
-header .title {
+.rra-app .brand {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.rra-app .brand .title {
   font-size: 15px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.rra-app .brand .subtitle {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--rra-muted);
+  letter-spacing: 0.01em;
 }
 
 .header-actions {
@@ -60,17 +65,19 @@ header .title {
 
 
 
-#context {
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--border);
+.rra-app #context {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--rra-border);
+  background: var(--rra-surface);
+  flex-shrink: 0;
 }
 
-#mode-bar {
+.rra-app #mode-bar {
   display: flex;
   gap: 3px;
-  margin-bottom: 8px;
-  background: #f0f0f3;
-  border-radius: 10px;
+  margin-bottom: 10px;
+  background: var(--rra-border);
+  border-radius: var(--rra-radius);
   padding: 3px;
 }
 
@@ -87,13 +94,13 @@ header .title {
 
 .mode-btn:hover {
   background: rgba(0, 0, 0, 0.05) !important;
-  color: var(--fg) !important;
+  color: var(--rra-fg) !important;
 }
 
 .mode-btn.active {
   background: #ffffff !important;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.08) !important;
-  color: var(--fg) !important;
+  color: var(--rra-fg) !important;
   font-weight: 600 !important;
   border: none !important;
 }
@@ -117,7 +124,7 @@ header .title {
 
 #load {
   flex: 1;
-  border: 1px solid var(--border) !important;
+  border: 1px solid var(--rra-border) !important;
   box-shadow: none !important;
 }
 
@@ -125,12 +132,21 @@ header .title {
   white-space: nowrap;
 }
 
-#thread-summary {
-  margin-top: 8px;
+.rra-app #thread-summary {
+  margin-top: 10px;
   font-size: 13px;
+  line-height: 1.45;
 }
 
-#thread-summary.readonly {
+.rra-app #thread-summary.thread-loaded {
+  background: var(--rra-surface-raised);
+  border: 1px solid var(--rra-border);
+  border-radius: var(--rra-radius-sm);
+  padding: 8px 10px;
+  color: var(--rra-fg);
+}
+
+.rra-app #thread-summary.readonly {
   border-left: 3px solid #9aa3b2;
   padding-left: 8px;
 }
@@ -145,7 +161,7 @@ header .title {
 }
 
 .history-item {
-  border: 1px solid var(--border);
+  border: 1px solid var(--rra-border);
   border-radius: 8px;
   background: #fff;
   padding: 8px;
@@ -165,14 +181,14 @@ header .title {
 
 .history-item .meta {
   display: block;
-  color: var(--muted);
+  color: var(--rra-muted);
   font-size: 12px;
 }
 
 .empty-history {
-  border: 1px dashed var(--border);
+  border: 1px dashed var(--rra-border);
   border-radius: 8px;
-  color: var(--muted);
+  color: var(--rra-muted);
   padding: 8px;
   font-size: 12px;
 }
@@ -211,7 +227,7 @@ header .title {
 }
 
 .muted {
-  color: var(--muted);
+  color: var(--rra-muted);
 }
 
 .hidden {
@@ -223,13 +239,15 @@ header .title {
   font-size: 12px;
 }
 
-#chat {
+.rra-app #chat {
   flex: 1;
   overflow-y: auto;
-  padding: 12px;
+  padding: 12px 14px;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  background: var(--rra-bg);
+  min-height: 0;
 }
 
 #chat.history-list-view {
@@ -268,7 +286,7 @@ header .title {
 }
 
 .history-chat-item {
-  border: 1px solid var(--border);
+  border: 1px solid var(--rra-border);
   border-radius: 10px;
   background: #fff;
   padding: 10px;
@@ -288,7 +306,7 @@ header .title {
 
 .history-chat-item .meta {
   display: block;
-  color: var(--muted);
+  color: var(--rra-muted);
   font-size: 12px;
 }
 
@@ -304,12 +322,14 @@ header .title {
 
 .bubble.user {
   align-self: flex-end;
-  background: var(--user);
+  background: var(--rra-user-bubble);
+  border: 1px solid #e0e7ff;
 }
 
 .bubble.assistant {
   align-self: flex-start;
-  background: var(--assistant);
+  background: var(--rra-assistant-bubble);
+  border: 1px solid var(--rra-border);
 }
 
 .bubble.assistant.structured {
@@ -376,10 +396,11 @@ header .title {
 }
 
 .draft-card {
-  background: #ffffff;
-  border: 1px solid #dfe3ea;
-  border-radius: 10px;
-  padding: 8px;
+  background: var(--rra-surface-raised);
+  border: 1px solid var(--rra-border);
+  border-radius: var(--rra-radius);
+  padding: 10px;
+  box-shadow: var(--rra-shadow-xs);
 }
 
 .draft-card.dm {
@@ -619,12 +640,14 @@ header .title {
   line-height: 1.25;
 }
 
-footer {
-  border-top: 1px solid var(--border);
-  padding: 10px 12px;
+.rra-app footer {
+  border-top: 1px solid var(--rra-border);
+  padding: 12px 14px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+  background: var(--rra-surface-raised);
+  flex-shrink: 0;
 }
 
 #composer-options {
@@ -764,7 +787,7 @@ footer {
 /* ---- Chat List: detail context card ---- */
 
 .chatlist-context-card {
-  border: 1px solid var(--border);
+  border: 1px solid var(--rra-border);
   border-radius: 10px;
   background: #f9fafc;
   padding: 10px 12px;
@@ -783,7 +806,7 @@ footer {
 
 .chatlist-orig-label {
   font-size: 11px;
-  color: var(--muted);
+  color: var(--rra-muted);
   text-transform: uppercase;
   letter-spacing: 0.03em;
   margin-bottom: 4px;
@@ -804,7 +827,7 @@ footer {
 
 .chatlist-thread-summary summary {
   cursor: pointer;
-  color: var(--muted);
+  color: var(--rra-muted);
   user-select: none;
 }
 
@@ -852,7 +875,7 @@ footer {
 
 .feedback-sub {
   font-size: 13px;
-  color: var(--muted);
+  color: var(--rra-muted);
   margin: 0 0 12px;
 }
 
@@ -888,4 +911,85 @@ footer {
 #feedback-later {
   white-space: nowrap;
 }
+
+/* ---- Refined controls (over daisyUI defaults) ---- */
+
+.rra-app .btn {
+  font-weight: 600;
+  border-radius: var(--rra-radius-sm);
+  min-height: 2.125rem;
+  box-shadow: none;
+}
+
+.rra-app .btn:not(.btn-primary):not(.btn-ghost):not(.btn-error) {
+  border: 1px solid var(--rra-border-strong);
+  background: var(--rra-surface-raised);
+  color: var(--rra-fg);
+}
+
+.rra-app .btn:not(.btn-primary):not(.btn-ghost):not(.btn-error):hover {
+  background: var(--rra-surface);
+  border-color: var(--rra-border-strong);
+}
+
+.rra-app .btn-primary {
+  background: var(--rra-accent);
+  border-color: var(--rra-accent);
+  color: #fff;
+}
+
+.rra-app .btn-primary:hover {
+  background: var(--rra-accent-hover);
+  border-color: var(--rra-accent-hover);
+}
+
+.rra-app .btn-ghost {
+  color: var(--rra-muted);
+}
+
+.rra-app .btn-ghost:hover {
+  background: var(--rra-surface);
+  color: var(--rra-fg);
+}
+
+.rra-app .select,
+.rra-app .textarea {
+  border-color: var(--rra-border-strong);
+  border-radius: var(--rra-radius-sm);
+  font-size: 13px;
+}
+
+.rra-app .textarea {
+  background: var(--rra-surface-raised);
+}
+
+/* Use background-color only so daisyUI’s select chevron (background-image) stays */
+.rra-app .select {
+  background-color: var(--rra-surface-raised);
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position:
+    calc(100% - 16px) calc(1px + 50%),
+    calc(100% - 11px) calc(1px + 50%);
+  background-size:
+    5px 5px,
+    5px 5px;
+  background-repeat: no-repeat;
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 1.75rem;
+  color: var(--rra-fg);
+}
+
+.rra-app .select:focus,
+.rra-app .textarea:focus {
+  outline: 2px solid var(--rra-accent-ring);
+  outline-offset: 0;
+}
+
+.rra-app #generate-btn {
+  font-size: 14px;
+  padding-top: 0.65rem;
+  padding-bottom: 0.65rem;
+  border-radius: var(--rra-radius);
 }

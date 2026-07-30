@@ -680,7 +680,7 @@ function init(): void {
     summary.innerHTML =
       `<strong>${escapeHtml(thread.title || "(untitled)")}</strong><br>` +
       `${escapeHtml(thread.subreddit)} \u00B7 u/${escapeHtml(thread.author)} \u00B7 ${countMsg}`;
-    summary.className = "";
+    summary.className = "thread-loaded";
   }
 
   /** Add a single bubble. For assistant turns use renderTurn instead when replaying history. */
@@ -1209,6 +1209,7 @@ function init(): void {
         summary.innerHTML += `<br><span class="warn">Some comments may not have loaded yet. Reload to retry.</span>`;
       }
 
+      summary.className = "thread-loaded";
       hasLoaded = true;
       loadBtn.textContent = "Reload thread";
       setMode("live");
