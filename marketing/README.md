@@ -1,36 +1,26 @@
 # Twight landing page
 
-Static marketing site for the Chrome extension. Open `index.html` from this folder in a browser, or deploy the files below to any static host.
+Static marketing site for the Chrome extension.
 
-## Files to deploy together
+## Deploy on Vercel (recommended)
 
-When hosting **only** the marketing site (not the whole repo), copy these paths so links keep working:
+1. Connect this **repo** to Vercel.
+2. Set **Root Directory** to empty / project root (**not** `marketing`).
+3. Framework preset: Other. No build command needed for static HTML.
+4. Repo root `vercel.json` rewrites `/` → `/marketing/index.html`.
 
-```
-marketing/
-  index.html
-  assets/icon-128.png
-  styles/landing.css
-public/
-  rra-tokens.css
-  sidepanel.css
-```
+Styles and assets use absolute paths:
 
-Or host the whole repository and point your domain at `marketing/index.html`.
+- `/marketing/...` for landing CSS and icons
+- `/public/rra-tokens.css` and `/public/sidepanel.css` for the panel mock
 
 ## Local preview
 
-From the repo root:
-
-```bash
-npx --yes serve marketing -p 3456
-```
-
-Then open `http://localhost:3456` — you still need `../public/*.css` reachable (serve from repo root instead if previews break):
+From the repo root (so `/public` and `/marketing` resolve the same way as Vercel):
 
 ```bash
 npx --yes serve . -p 3456
-# open http://localhost:3456/marketing/
+# open http://localhost:3456/
 ```
 
 ## Chrome Web Store
