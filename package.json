@@ -5,6 +5,7 @@
   "description": "Chrome extension that reads a Reddit post + comments and drafts tailored replies and DMs with Claude.",
   "scripts": {
     "build": "node build.mjs",
+    "build:vercel": "node scripts/vercel-static.mjs",
     "watch": "node build.mjs --watch",
     "typecheck": "tsc --noEmit"
   },

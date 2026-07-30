@@ -5,9 +5,13 @@ Static marketing site for the Chrome extension.
 ## Deploy on Vercel (recommended)
 
 1. Connect this **repo** to Vercel.
-2. Set **Root Directory** to empty / project root (**not** `marketing`).
-3. Framework preset: Other. No build command needed for static HTML.
-4. Repo root `vercel.json` rewrites `/` → `/marketing/index.html`.
+2. **Root Directory:** empty or `./` (repo root).
+3. **Framework preset:** Other.
+4. **Output Directory:** `vercel-static` (or leave blank — `vercel.json` sets it).
+5. **Build command:** leave blank — `vercel.json` runs `npm run build:vercel`, which copies `marketing/` and `public/` into `vercel-static/`.
+6. **Install command:** leave blank (optional).
+
+`vercel.json` rewrites `/` → `/marketing/index.html`.
 
 Styles and assets use absolute paths:
 
