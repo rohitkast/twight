@@ -1,8 +1,8 @@
 {
   "name": "reddit-reply-assistant",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "Chrome extension that reads a Reddit post + comments and drafts tailored replies and DMs with Claude.",
+  "description": "Chrome extension that reads a Reddit post + comments and drafts tailored replies and DMs.",
   "scripts": {
     "build": "node build.mjs",
     "build:vercel": "node scripts/vercel-static.mjs",
@@ -12,10 +12,13 @@
   "dependencies": {
     "@anthropic-ai/sdk": "latest",
     "@google/generative-ai": "^0.24.1",
+    "@polar-sh/sdk": "^0.34.0",
+    "@supabase/supabase-js": "^2.49.1",
     "marked": "^18.0.5"
   },
   "devDependencies": {
     "@types/chrome": "latest",
+    "@vercel/node": "^5.2.1",
     "esbuild": "latest",
     "typescript": "latest"
   }

@@ -1,29 +1,35 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
 
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@5/themes.css" rel="stylesheet" type="text/css" />
   <link rel="stylesheet" href="options.css" />
 </head>
 
 <body>
   <h1>Twight — Settings</h1>
 
-  <label for="key">Anthropic API key (Claude)</label>
-  <input id="key" type="password" placeholder="sk-ant-..." autocomplete="off" />
+  <section class="card">
+    <h2>Account</h2>
+    <p id="account-status" class="muted">Checking sign-in…</p>
+    <p id="drafts-status" class="muted"></p>
+    <div class="actions">
+      <button id="sign-in" class="btn primary hidden" type="button">Sign in with Google</button>
+      <button id="buy-drafts" class="btn primary hidden" type="button">Buy drafts</button>
+      <button id="refresh-drafts" class="btn ghost hidden" type="button">Refresh balance</button>
+      <button id="sign-out" class="btn ghost hidden" type="button">Sign out</button>
+    </div>
+  </section>
 
-  <label for="gemini-key">Google API key (Gemini)</label>
-  <input id="gemini-key" type="password" placeholder="AIza..." autocomplete="off" />
+  <section class="card">
+    <h2>Bring your own API key</h2>
+    <p class="note">Coming soon. For now Twight uses hosted drafts (sign in above).</p>
+  </section>
 
-  <button id="save">Save</button>
   <p id="status" class="muted"></p>
-
-  <p class="note">
-    Keys are stored in this browser's extension storage
-    (<code>chrome.storage.local</code>) and sent only to their respective
-    APIs (<code>api.anthropic.com</code> or <code>generativelanguage.googleapis.com</code>).
-    Don't distribute this build — the keys would ship with it.
-  </p>
 
   <script src="options.js"></script>
 </body>

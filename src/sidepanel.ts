@@ -1,7 +1,12 @@
-import { getClient, buildSystemPrompt, buildConversionSystemPrompt, streamReply, type ChatTurn } from "./lib/claude";
-import { getGeminiClient, streamReplyGemini } from "./lib/gemini";
+import { buildSystemPrompt, buildConversionSystemPrompt, type ChatTurn } from "./lib/claude";
+import { ApiError, fetchMe, streamGenerate } from "./lib/api";
+import { getCurrentUser, signInWithGoogle } from "./lib/auth";
+import { BYOK_ENABLED, PRICING_URL } from "./lib/config";
 import type { RedditThread, ExtractResponse, Goal, ScrollToUserResponse } from "./lib/types";
 import { marked } from "marked";
+
+// BYOK path parked — re-enable with BYOK_ENABLED + restore getClient/streamReply imports.
+void BYOK_ENABLED;
 
 // ---- Module-level state ----
 
@@ -645,6 +650,12 @@ function init(): void {
   const feedbackLaterBtn = document.getElementById("feedback-later") as HTMLButtonElement;
   const feedbackTextarea = document.getElementById("feedback-text") as HTMLTextAreaElement;
   const moodBtns = Array.from(feedbackOverlay.querySelectorAll<HTMLButtonElement>(".mood-btn"));
+  const draftsBadge = document.getElementById("drafts-badge") as HTMLButtonElement;
+  const signInBtn = document.getElementById("sign-in-btn") as HTMLButtonElement;
+  const authModal = document.getElementById("auth-modal") as HTMLDialogElement;
+  const authModalGoogle = document.getElementById("auth-modal-google") as HTMLButtonElement;
+  const draftsModal = document.getElementById("drafts-modal") as HTMLDialogElement;
+  const draftsModalBuy = document.getElementById("drafts-modal-buy") as HTMLButtonElement;
 
   let mode: "live" | "history-list" | "history-detail" | "chatlist-list" | "chatlist-detail" = "live";
   let includeComments = true;
@@ -653,6 +664,84 @@ function init(): void {
   let selectedHistoryPostKey: string | null = null;
   let currentTrackedUser: TrackedUser | null = null;
   let selectedMood: string | null = null;
+  let draftsRemaining: number | null = null;
+  let signedIn = false;
+
+  function openPricing(): void {
+    chrome.tabs.create({ url: PRICING_URL });
+  }
+
+  function updateAuthUi(): void {
+    signInBtn.classList.toggle("hidden", signedIn);
+    draftsBadge.classList.toggle("hidden", !signedIn);
+    if (signedIn && draftsRemaining !== null) {
+      draftsBadge.textContent = `${draftsRemaining} draft${draftsRemaining === 1 ? "" : "s"}`;
+      draftsBadge.classList.toggle("low", draftsRemaining <= 2);
+    } else if (signedIn) {
+      draftsBadge.textContent = "… drafts";
+    }
+  }
+
+  async function refreshAccount(): Promise<void> {
+    const user = await getCurrentUser();
+    signedIn = !!user;
+    if (!user) {
+      draftsRemaining = null;
+      updateAuthUi();
+      return;
+    }
+    try {
+      const me = await fetchMe();
+      draftsRemaining = me.draftsRemaining;
+    } catch {
+      draftsRemaining = null;
+    }
+    updateAuthUi();
+  }
+
+  async function handleSignIn(): Promise<void> {
+    try {
+      signInBtn.disabled = true;
+      authModalGoogle.disabled = true;
+      await signInWithGoogle();
+      authModal.close();
+      showToast("Signed in — 10 free drafts if you're new");
+      await refreshAccount();
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Sign-in failed");
+    } finally {
+      signInBtn.disabled = false;
+      authModalGoogle.disabled = false;
+    }
+  }
+
+  function requireSignedIn(): boolean {
+    if (signedIn) return true;
+    authModal.showModal();
+    return false;
+  }
+
+  function requireDrafts(): boolean {
+    if (draftsRemaining !== null && draftsRemaining <= 0) {
+      draftsModal.showModal();
+      return false;
+    }
+    return true;
+  }
+
+  signInBtn.addEventListener("click", () => { void handleSignIn(); });
+  authModalGoogle.addEventListener("click", () => { void handleSignIn(); });
+  draftsBadge.addEventListener("click", () => openPricing());
+  draftsModalBuy.addEventListener("click", () => {
+    draftsModal.close();
+    openPricing();
+  });
+
+  // Refresh balance when side panel becomes visible again (e.g. after purchase)
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") void refreshAccount();
+  });
+  void refreshAccount();
 
   function updateCommentToggleVisualState(): void {
     if (!commentToggle) return;
@@ -783,10 +872,10 @@ function init(): void {
     card.innerHTML =
       `<p class="onboarding-title">Get started</p>` +
       `<ol class="onboarding-steps">` +
-      `<li><strong>Add your API key</strong> &mdash; click <strong>&#9881;</strong> (top right) and paste your Claude or Gemini key.</li>` +
+      `<li><strong>Sign in with Google</strong> &mdash; new accounts get 10 free drafts.</li>` +
       `<li><strong>Open a Reddit post</strong> where your target users are active, then click <strong>Load thread from page</strong> above.</li>` +
-      `<li><strong>Select a goal &amp; hit Generate</strong> &mdash; the AI will draft replies, comments, or DMs tailored to the thread.</li>` +
-      `<li><strong>Pick the best draft.</strong> For DMs, click <strong>Save</strong> &mdash; if they reply, open <strong>Chat List</strong> to continue the conversation with full thread context.</li>` +
+      `<li><strong>Select a goal &amp; hit Generate</strong> &mdash; get tailored replies, comments, or DMs.</li>` +
+      `<li><strong>Pick the best draft.</strong> For DMs, click <strong>Save</strong> &mdash; if they reply, open <strong>Chat List</strong> to continue with full thread context.</li>` +
       `</ol>`;
     chat.appendChild(card);
   }
@@ -1034,16 +1123,12 @@ function init(): void {
   async function sendFollowUp(): Promise<void> {
     if (!currentTrackedUser) return;
     if (generateBtn.disabled) return;
+    if (!requireSignedIn()) return;
+    if (!requireDrafts()) return;
     const userMsg = input.value.trim();
     if (!userMsg) {
       showToast("Describe what they replied before sending.");
       return;
-    }
-    const { apiKey, geminiApiKey } = (await chrome.storage.local.get(["apiKey", "geminiApiKey"])) as { apiKey?: string; geminiApiKey?: string };
-    if (modelProvider === "gemini") {
-      if (!geminiApiKey) { addBubble("assistant", "No Gemini API key set. Click \u2699 to add your Google API key."); return; }
-    } else {
-      if (!apiKey) { addBubble("assistant", "No API key set. Click \u2699 to add your Anthropic API key."); return; }
     }
 
     const goal: Goal | null = currentTrackedUser.goalName
@@ -1071,10 +1156,10 @@ function init(): void {
     const timeoutId = window.setTimeout(() => controller.abort(), STREAM_TIMEOUT_MS);
 
     try {
-      const stream =
-        modelProvider === "gemini"
-          ? streamReplyGemini(getGeminiClient(geminiApiKey!), system, currentTrackedUser.followUpTurns, controller.signal)
-          : streamReply(getClient(apiKey!), system, currentTrackedUser.followUpTurns, controller.signal);
+      const stream = streamGenerate(
+        { system, history: currentTrackedUser.followUpTurns },
+        controller.signal,
+      );
 
       let acc = "";
       for await (const delta of stream) {
@@ -1089,8 +1174,14 @@ function init(): void {
       const users = await getTrackedUsers();
       const idx = users.findIndex((u) => u.id === currentTrackedUser!.id);
       if (idx >= 0) { users[idx] = currentTrackedUser; await setTrackedUsers(users); }
+      await refreshAccount();
     } catch (e) {
-      if (e instanceof Error && e.name === "AbortError") {
+      if (e instanceof ApiError && e.code === "insufficient_drafts") {
+        draftsRemaining = 0;
+        updateAuthUi();
+        draftsModal.showModal();
+        out.textContent = "No drafts left. Buy more to continue.";
+      } else if (e instanceof Error && e.name === "AbortError") {
         out.textContent = "Request timed out — something went wrong. Try again or refresh the page.";
       } else {
         out.textContent = `Error: ${e instanceof Error ? e.message : String(e)}`;
@@ -1236,6 +1327,8 @@ function init(): void {
 
   async function send(): Promise<void> {
     if (generateBtn.disabled) return;
+    if (!requireSignedIn()) return;
+    if (!requireDrafts()) return;
 
     if (!activeGoal) {
       showToast("Select a goal first — click the goal dropdown to choose one.");
@@ -1244,13 +1337,6 @@ function init(): void {
     if (!thread) {
       addBubble("assistant", "Load a Reddit thread first by clicking **Load thread from page**.");
       return;
-    }
-    const { apiKey, geminiApiKey } = (await chrome.storage.local.get(["apiKey", "geminiApiKey"])) as { apiKey?: string; geminiApiKey?: string };
-
-    if (modelProvider === "gemini") {
-      if (!geminiApiKey) { addBubble("assistant", "No Gemini API key set. Click \u2699 to add your Google API key."); return; }
-    } else {
-      if (!apiKey) { addBubble("assistant", "No API key set. Click \u2699 to add your Anthropic API key."); return; }
     }
 
     // Instruction is only active when the toggle is on
@@ -1279,10 +1365,11 @@ function init(): void {
         includeComments,
       });
 
-      const stream =
-        modelProvider === "gemini"
-          ? streamReplyGemini(getGeminiClient(geminiApiKey!), system, history, controller.signal)
-          : streamReply(getClient(apiKey!), system, history, controller.signal);
+      // Hosted path: client still builds system prompt (keeps summarization logic local)
+      const stream = streamGenerate({
+        system,
+        history: history.map((t) => ({ role: t.role, content: t.content })),
+      }, controller.signal);
 
       let acc = "";
       for await (const delta of stream) {
@@ -1327,9 +1414,19 @@ function init(): void {
 
       truncateConversationSummary(apiMessage, finalText);
       await saveCurrentConversation();
+      await refreshAccount();
       void maybeShowFeedbackModal();
     } catch (e) {
-      if (e instanceof Error && e.name === "AbortError") {
+      // Roll back the optimistic user turn if generation failed before assistant reply
+      if (history.length && history[history.length - 1]?.role === "user") {
+        history.pop();
+      }
+      if (e instanceof ApiError && e.code === "insufficient_drafts") {
+        draftsRemaining = 0;
+        updateAuthUi();
+        draftsModal.showModal();
+        out.textContent = "No drafts left. Buy more to continue.";
+      } else if (e instanceof Error && e.name === "AbortError") {
         out.textContent = "Request timed out — something went wrong. Try again or refresh the page.";
       } else {
         out.textContent = `Error: ${e instanceof Error ? e.message : String(e)}`;

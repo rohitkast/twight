@@ -1,13 +1,21 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
-  "installCommand": "",
+  "installCommand": "npm install",
   "buildCommand": "npm run build:vercel",
   "outputDirectory": "vercel-static",
   "rewrites": [
     {
       "source": "/",
       "destination": "/marketing/index.html"
+    },
+    {
+      "source": "/pricing",
+      "destination": "/marketing/pricing.html"
+    },
+    {
+      "source": "/success",
+      "destination": "/marketing/success.html"
     }
   ]
 }

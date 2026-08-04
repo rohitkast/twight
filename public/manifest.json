@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Twight",
-  "version": "0.1.7",
+  "version": "0.2.0",
   "description": "Find potential users and clients in Reddit threads. Goal-based drafts, saved follow-ups.",
   "icons": {
     "16": "icons/icon-16.png",
@@ -10,10 +10,13 @@
   },
   "permissions": [
     "storage",
-    "sidePanel"
+    "sidePanel",
+    "identity"
   ],
   "host_permissions": [
     "https://*.reddit.com/*",
+    "https://twight.vercel.app/*",
+    "https://rcbnajyufootjbpncwxz.supabase.co/*",
     "https://api.anthropic.com/*",
     "https://generativelanguage.googleapis.com/*"
   ],

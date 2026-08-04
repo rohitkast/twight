@@ -60,8 +60,21 @@ body.rra-app {
 .header-actions {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  flex-shrink: 0;
 }
+
+.drafts-badge {
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  white-space: nowrap;
+  max-width: 7.5rem;
+}
+
+.drafts-badge.low {
+  color: var(--rra-danger, #b91c1c);
+}
+
 
 
 

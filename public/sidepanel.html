@@ -20,6 +20,9 @@
       <span class="subtitle">Thread to conversation on Reddit</span>
     </div>
     <div class="header-actions">
+      <button id="drafts-badge" type="button" class="btn btn-ghost btn-xs drafts-badge hidden"
+        title="Draft balance — click to buy more">— drafts</button>
+      <button id="sign-in-btn" type="button" class="btn btn-primary btn-xs">Sign in</button>
       <button id="history-back" class="btn btn-ghost btn-square btn-sm hidden" title="Back" aria-label="Back">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"
           width="16" height="16">
@@ -73,7 +76,7 @@
   <footer id="composer">
     <div id="composer-options">
       <div id="composer-left">
-        <select id="model-select" class="select select-sm" aria-label="AI model" title="Select AI model">
+        <select id="model-select" class="select select-sm hidden" aria-label="AI model" title="Select AI model" hidden>
           <option value="claude">Claude Sonnet 4.5</option>
           <option value="gemini">Gemini 3.5 Flash</option>
         </select>
@@ -89,6 +92,32 @@
       placeholder="e.g. DMs only · focus on u/someuser · skip OP"></textarea>
     <button id="generate-btn" class="btn btn-primary btn-block">Generate</button>
   </footer>
+
+  <!-- Auth / drafts modals -->
+  <dialog id="auth-modal" class="modal">
+    <div class="modal-box">
+      <h3 class="text-lg font-bold">Sign in to continue</h3>
+      <p class="py-3 text-sm opacity-80">Sign in with Google to generate drafts. New accounts get 10 free drafts.</p>
+      <div class="modal-action">
+        <form method="dialog"><button class="btn btn-ghost btn-sm">Cancel</button></form>
+        <button id="auth-modal-google" type="button" class="btn btn-primary btn-sm">Sign in with Google</button>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+  </dialog>
+
+  <dialog id="drafts-modal" class="modal">
+    <div class="modal-box">
+      <h3 class="text-lg font-bold">Out of drafts</h3>
+      <p class="py-3 text-sm opacity-80">Buy more drafts to keep generating. Use the same Google email you signed in
+        with.</p>
+      <div class="modal-action">
+        <form method="dialog"><button class="btn btn-ghost btn-sm">Cancel</button></form>
+        <button id="drafts-modal-buy" type="button" class="btn btn-primary btn-sm">Buy drafts</button>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+  </dialog>
 
   <!-- Feedback modal -->
   <div id="feedback-overlay" class="hidden" role="dialog" aria-modal="true" aria-labelledby="feedback-title">
