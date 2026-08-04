@@ -3,48 +3,164 @@ import { SUPABASE_ANON_KEY, SUPABASE_URL } from "./config";
 
 const SESSION_KEY = "supabaseSession";
 
+/** Minimal fields we persist — chrome.storage JSON-clones these. */
+interface StoredSession {
+  access_token: string;
+  refresh_token: string;
+  expires_at?: number;
+  expires_in?: number;
+  token_type?: string;
+  user: User;
+}
+
 let client: SupabaseClient | null = null;
+let authListenerAttached = false;
 
 export function getSupabase(): SupabaseClient {
   if (!client) {
     client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       auth: {
+        // We own persistence via chrome.storage.local (extension pages have no durable localStorage).
         persistSession: false,
-        autoRefreshToken: false,
+        autoRefreshToken: true,
         detectSessionInUrl: false,
       },
     });
   }
+  ensureAuthListener(client);
   return client;
 }
 
-export async function getStoredSession(): Promise<Session | null> {
-  const { [SESSION_KEY]: raw } = (await chrome.storage.local.get(SESSION_KEY)) as {
-    [SESSION_KEY]?: Session | null;
+function ensureAuthListener(supabase: SupabaseClient): void {
+  if (authListenerAttached) return;
+  authListenerAttached = true;
+  // Keep chrome.storage in sync when the SDK refreshes JWTs in memory.
+  supabase.auth.onAuthStateChange((event, session) => {
+    if (event === "SIGNED_OUT") return;
+    if (session?.access_token && session.refresh_token) {
+      void persistSession(session);
+    }
+  });
+}
+
+function toStored(session: Session, fallbackRefresh?: string): StoredSession | null {
+  const refresh_token = session.refresh_token || fallbackRefresh;
+  if (!session.access_token || !refresh_token || !session.user) return null;
+  return {
+    access_token: session.access_token,
+    refresh_token,
+    expires_at: session.expires_at,
+    expires_in: session.expires_in,
+    token_type: session.token_type,
+    user: session.user,
   };
-  if (!raw?.access_token || !raw?.refresh_token) return null;
+}
+
+async function persistSession(session: Session, fallbackRefresh?: string): Promise<void> {
+  const stored = toStored(session, fallbackRefresh);
+  if (!stored) return;
+  await chrome.storage.local.set({ [SESSION_KEY]: stored });
+}
+
+function sessionFromStored(raw: StoredSession): Session {
+  return {
+    access_token: raw.access_token,
+    refresh_token: raw.refresh_token,
+    expires_at: raw.expires_at,
+    expires_in: raw.expires_in ?? 3600,
+    token_type: "bearer",
+    user: raw.user,
+  };
+}
+
+function isAccessTokenFresh(stored: StoredSession, skewSeconds = 60): boolean {
+  if (!stored.expires_at) return true;
+  return stored.expires_at * 1000 > Date.now() + skewSeconds * 1000;
+}
+
+function isInvalidGrant(error: { message?: string; status?: number } | null): boolean {
+  if (!error) return false;
+  if (error.status === 401 || error.status === 403) return true;
+  const msg = (error.message || "").toLowerCase();
+  return (
+    msg.includes("invalid refresh") ||
+    msg.includes("invalid_grant") ||
+    (msg.includes("refresh token") &&
+      (msg.includes("not found") || msg.includes("invalid") || msg.includes("expired")))
+  );
+}
+
+async function readStored(): Promise<StoredSession | null> {
+  const { [SESSION_KEY]: raw } = (await chrome.storage.local.get(SESSION_KEY)) as {
+    [SESSION_KEY]?: StoredSession | null;
+  };
+  if (!raw?.access_token || !raw?.refresh_token || !raw.user) return null;
+  return raw;
+}
+
+/**
+ * Restore the Supabase session from chrome.storage.
+ *
+ * Important: supabase.auth.setSession() network-validates the JWT. In an extension
+ * side panel that can fail on reopen (cold start / flaky network). We must NOT wipe
+ * storage on those failures — that was forcing a manual Sign-in click every reopen
+ * even though Google cookies still completed OAuth instantly.
+ */
+export async function getStoredSession(): Promise<Session | null> {
+  const raw = await readStored();
+  if (!raw) return null;
 
   const supabase = getSupabase();
+
+  if (!isAccessTokenFresh(raw)) {
+    const { data, error } = await supabase.auth.refreshSession({
+      refresh_token: raw.refresh_token,
+    });
+    if (!error && data.session) {
+      await persistSession(data.session, raw.refresh_token);
+      return data.session;
+    }
+    if (isInvalidGrant(error)) {
+      await chrome.storage.local.remove(SESSION_KEY);
+      return null;
+    }
+    // Transient refresh failure — keep tokens; UI can still show signed-in via user cache.
+    return null;
+  }
+
   const { data, error } = await supabase.auth.setSession({
     access_token: raw.access_token,
     refresh_token: raw.refresh_token,
   });
-  if (error || !data.session) {
-    await chrome.storage.local.remove(SESSION_KEY);
-    return null;
+
+  if (!error && data.session) {
+    // setSession sometimes omits refresh_token in the returned session — preserve ours.
+    await persistSession(data.session, raw.refresh_token);
+    return data.session;
   }
-  await chrome.storage.local.set({ [SESSION_KEY]: data.session });
-  return data.session;
+
+  // setSession failed (often a getUser network check) but JWT is still fresh.
+  // Return stored tokens so the side panel stays signed-in and API Bearer auth works.
+  return sessionFromStored(raw);
 }
 
 export async function getAccessToken(): Promise<string | null> {
   const session = await getStoredSession();
-  return session?.access_token ?? null;
+  if (session?.access_token) return session.access_token;
+
+  // Fresh token still on disk after a transient restore failure.
+  const raw = await readStored();
+  if (raw && isAccessTokenFresh(raw, 0)) return raw.access_token;
+  return null;
 }
 
 export async function getCurrentUser(): Promise<User | null> {
   const session = await getStoredSession();
-  return session?.user ?? null;
+  if (session?.user) return session.user;
+
+  // Optimistic UI: keep Sign-in hidden if we still have a stored identity + refresh token.
+  const raw = await readStored();
+  return raw?.user ?? null;
 }
 
 /**
@@ -90,7 +206,7 @@ export async function signInWithGoogle(): Promise<Session> {
     throw new Error(error?.message || "Failed to establish session");
   }
 
-  await chrome.storage.local.set({ [SESSION_KEY]: data.session });
+  await persistSession(data.session, refresh_token);
   return data.session;
 }
 

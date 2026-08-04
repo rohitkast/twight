@@ -20,8 +20,14 @@
       <span class="subtitle">Thread to conversation on Reddit</span>
     </div>
     <div class="header-actions">
-      <button id="drafts-badge" type="button" class="btn btn-ghost btn-xs drafts-badge hidden"
-        title="Draft balance — click to buy more">— drafts</button>
+      <button id="drafts-badge" type="button" class="drafts-meter hidden"
+        title="Draft balance — click to buy more" aria-label="Draft balance">
+        <span class="drafts-meter-count" id="drafts-meter-count">—</span>
+        <span class="drafts-meter-track" aria-hidden="true">
+          <span class="drafts-meter-fill" id="drafts-meter-fill"></span>
+          <span class="drafts-meter-ticks" aria-hidden="true"></span>
+        </span>
+      </button>
       <button id="sign-in-btn" type="button" class="btn btn-primary btn-xs">Sign in</button>
       <button id="history-back" class="btn btn-ghost btn-square btn-sm hidden" title="Back" aria-label="Back">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor"

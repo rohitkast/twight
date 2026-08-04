@@ -4,6 +4,7 @@ const { corsHeaders, HOSTED_GEMINI_MODEL, requireUser } = require("./_lib/supaba
 const MAX_HISTORY_TURNS = 6;
 const MAX_SYSTEM_CHARS = 24000;
 const MAX_MESSAGE_CHARS = 8000;
+const DRAFTS_FOOTER_PREFIX = "<!--__TWIGHT_DRAFTS__:";
 
 module.exports = async function handler(req, res) {
   const headers = corsHeaders(req.headers.origin);
@@ -32,6 +33,27 @@ module.exports = async function handler(req, res) {
       return;
     }
 
+    const { data: profile, error: profileErr } = await admin
+      .from("profiles")
+      .select("drafts_balance")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (profileErr) {
+      res.status(500).json({ error: profileErr.message });
+      return;
+    }
+
+    const balance = profile?.drafts_balance ?? 0;
+    if (balance <= 0) {
+      res.status(402).json({
+        error: "No drafts left. Buy more to continue.",
+        code: "insufficient_drafts",
+        draftsRemaining: 0,
+      });
+      return;
+    }
+
     const system = body.system.slice(0, MAX_SYSTEM_CHARS);
     const history = body.history
       .filter((t) => t && (t.role === "user" || t.role === "assistant") && typeof t.content === "string")
@@ -42,24 +64,6 @@ module.exports = async function handler(req, res) {
 
     if (history.length === 0) {
       res.status(400).json({ error: "history must include at least one turn" });
-      return;
-    }
-
-    const { data: newBalance, error: deductErr } = await admin.rpc("deduct_draft", {
-      p_user_id: user.id,
-    });
-
-    if (deductErr) {
-      const msg = deductErr.message || "";
-      if (msg.includes("insufficient_drafts")) {
-        res.status(402).json({
-          error: "No drafts left. Buy more to continue.",
-          code: "insufficient_drafts",
-          draftsRemaining: 0,
-        });
-        return;
-      }
-      res.status(500).json({ error: deductErr.message });
       return;
     }
 
@@ -87,15 +91,37 @@ module.exports = async function handler(req, res) {
     const chat = model.startChat({ history: geminiHistory });
     const result = await chat.sendMessageStream(lastUserMsg);
 
-    res.setHeader("Content-Type", "text/plain; charset=utf-8");
-    res.setHeader("Cache-Control", "no-cache, no-transform");
-    res.setHeader("X-Drafts-Remaining", String(newBalance != null ? newBalance : ""));
-    res.status(200);
-
+    let wroteAny = false;
     for await (const chunk of result.stream) {
       const text = chunk.text();
-      if (text) res.write(text);
+      if (!text) continue;
+      if (!wroteAny) {
+        res.setHeader("Content-Type", "text/plain; charset=utf-8");
+        res.setHeader("Cache-Control", "no-cache, no-transform");
+        res.setHeader("X-Hosted-Model", HOSTED_GEMINI_MODEL);
+        res.status(200);
+        wroteAny = true;
+      }
+      res.write(text);
     }
+
+    if (!wroteAny) {
+      res.status(502).json({ error: "Empty model response — no draft was used." });
+      return;
+    }
+
+    // Charge only after a successful, non-empty streamed response.
+    const { data: newBalance, error: deductErr } = await admin.rpc("deduct_draft", {
+      p_user_id: user.id,
+    });
+
+    if (deductErr) {
+      console.error("deduct_draft failed after successful stream", deductErr);
+      res.end();
+      return;
+    }
+
+    res.write(`\n${DRAFTS_FOOTER_PREFIX}${newBalance != null ? newBalance : balance - 1}-->`);
     res.end();
   } catch (e) {
     if (res.headersSent) {

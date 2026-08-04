@@ -38,11 +38,33 @@ function corsHeaders(origin) {
   };
 }
 
+/**
+ * Normalize Gemini model ids for @google/generative-ai.
+ * Vercel env values often get pasted as "gemini-2.5-flash", models/gemini-..., or with spaces —
+ * those produce: GenerateContentRequest.model: unexpected model name format
+ */
+function resolveHostedGeminiModel() {
+  const fallback = "gemini-3.6-flash";
+  let raw = process.env.HOSTED_GEMINI_MODEL || fallback;
+  raw = String(raw).trim().replace(/^["']|["']$/g, "");
+  if (!raw) raw = fallback;
+  const short = raw.replace(/^models\//, "");
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(short)) {
+    console.warn(`Invalid HOSTED_GEMINI_MODEL="${raw}", falling back to ${fallback}`);
+    return fallback;
+  }
+  if (legacyMap[short]) {
+    console.warn(`HOSTED_GEMINI_MODEL=${short} unavailable for new keys — using ${legacyMap[short]}`);
+    return legacyMap[short];
+  }
+  return short;
+}
+
 module.exports = {
   getAdminClient,
   requireUser,
   corsHeaders,
   DRAFTS_PER_PACK: Number(process.env.DRAFTS_PER_PACK || 50),
   POLAR_PRODUCT_ID: process.env.POLAR_PRODUCT_ID || "8e149b00-a6af-4db6-9829-7b983438c08f",
-  HOSTED_GEMINI_MODEL: process.env.HOSTED_GEMINI_MODEL || "gemini-2.5-flash",
+  HOSTED_GEMINI_MODEL: resolveHostedGeminiModel(),
 };

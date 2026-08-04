@@ -1,7 +1,7 @@
 import { buildSystemPrompt, buildConversionSystemPrompt, type ChatTurn } from "./lib/claude";
 import { ApiError, fetchMe, streamGenerate } from "./lib/api";
 import { getCurrentUser, signInWithGoogle } from "./lib/auth";
-import { BYOK_ENABLED, PRICING_URL } from "./lib/config";
+import { BYOK_ENABLED, FREE_DRAFTS_ON_SIGNUP, PRICING_URL } from "./lib/config";
 import type { RedditThread, ExtractResponse, Goal, ScrollToUserResponse } from "./lib/types";
 import { marked } from "marked";
 
@@ -47,6 +47,7 @@ const TRACKED_USERS_WARN_THRESHOLD = 30;
 const TRACKED_USERS_MAX = 50;
 const ITEM_OPEN = "<ITEM>";
 const ITEM_CLOSE = "</ITEM>";
+const DRAFTS_BAR_MAX_KEY = "draftsBarMax";
 const FEEDBACK_STATE_KEY = "feedbackState";
 const FEEDBACK_WEBHOOK = "https://discord.com/api/webhooks/1523667772339519519/T5CZ076q-EKJjAopvpcwYVhzNA2L2M4tZ3kiqyf4dIA7RO-RBaBXnyvUEO89_Gfeu3tH";
 const MAX_FEEDBACK_SESSIONS = 3;
@@ -651,6 +652,8 @@ function init(): void {
   const feedbackTextarea = document.getElementById("feedback-text") as HTMLTextAreaElement;
   const moodBtns = Array.from(feedbackOverlay.querySelectorAll<HTMLButtonElement>(".mood-btn"));
   const draftsBadge = document.getElementById("drafts-badge") as HTMLButtonElement;
+  const draftsMeterCount = document.getElementById("drafts-meter-count") as HTMLElement;
+  const draftsMeterFill = document.getElementById("drafts-meter-fill") as HTMLElement;
   const signInBtn = document.getElementById("sign-in-btn") as HTMLButtonElement;
   const authModal = document.getElementById("auth-modal") as HTMLDialogElement;
   const authModalGoogle = document.getElementById("auth-modal-google") as HTMLButtonElement;
@@ -665,22 +668,79 @@ function init(): void {
   let currentTrackedUser: TrackedUser | null = null;
   let selectedMood: string | null = null;
   let draftsRemaining: number | null = null;
+  let draftsBarMax = FREE_DRAFTS_ON_SIGNUP;
   let signedIn = false;
 
   function openPricing(): void {
     chrome.tabs.create({ url: PRICING_URL });
   }
 
+  async function loadDraftsBarMax(): Promise<void> {
+    const { [DRAFTS_BAR_MAX_KEY]: saved } = (await chrome.storage.local.get(DRAFTS_BAR_MAX_KEY)) as {
+      [DRAFTS_BAR_MAX_KEY]?: number;
+    };
+    if (typeof saved === "number" && saved > 0) draftsBarMax = saved;
+  }
+
+  async function bumpDraftsBarMax(remaining: number): Promise<void> {
+    if (remaining <= draftsBarMax) return;
+    draftsBarMax = remaining;
+    await chrome.storage.local.set({ [DRAFTS_BAR_MAX_KEY]: draftsBarMax });
+  }
+
+  function applyDraftsBalance(remaining: number): void {
+    draftsRemaining = remaining;
+    void bumpDraftsBarMax(remaining);
+    updateAuthUi();
+  }
+
+  /** Consume hosted stream; returns full text + balance from stream footer when present. */
+  async function consumeHostedStream(
+    body: Parameters<typeof streamGenerate>[0],
+    signal: AbortSignal,
+    onAcc: (acc: string) => void,
+  ): Promise<{ text: string; draftsRemaining: number | null }> {
+    const gen = streamGenerate(body, signal);
+    let acc = "";
+    let step = await gen.next();
+    while (!step.done) {
+      acc += step.value;
+      onAcc(acc);
+      step = await gen.next();
+    }
+    const balance = typeof step.value === "number" ? step.value : null;
+    if (balance !== null) {
+      applyDraftsBalance(balance);
+    } else {
+      // Footer missing (older API) — sync from /me
+      await refreshAccount();
+    }
+    return { text: acc, draftsRemaining: balance };
+  }
+
   function updateAuthUi(): void {
     signInBtn.classList.toggle("hidden", signedIn);
     draftsBadge.classList.toggle("hidden", !signedIn);
+
+    draftsBadge.classList.remove("low", "empty", "loading");
+
     if (signedIn && draftsRemaining !== null) {
-      draftsBadge.textContent = `${draftsRemaining} draft${draftsRemaining === 1 ? "" : "s"}`;
-      draftsBadge.classList.toggle("low", draftsRemaining <= 2);
-      draftsBadge.title = "Draft balance — click to buy more";
+      const max = Math.max(draftsBarMax, draftsRemaining, 1);
+      const pct = Math.max(0, Math.min(100, (draftsRemaining / max) * 100));
+      draftsMeterCount.textContent = String(draftsRemaining);
+      draftsMeterFill.style.width = `${pct}%`;
+      draftsBadge.setAttribute("aria-valuenow", String(draftsRemaining));
+      draftsBadge.setAttribute("aria-valuemax", String(max));
+      draftsBadge.title = `${draftsRemaining} of ${max} drafts — click to buy more`;
+      if (draftsRemaining <= 0) draftsBadge.classList.add("empty");
+      else if (draftsRemaining <= 2) draftsBadge.classList.add("low");
     } else if (signedIn) {
-      draftsBadge.textContent = "… drafts";
-      draftsBadge.title = "Could not load balance — click to retry, or buy more";
+      draftsMeterCount.textContent = "…";
+      draftsMeterFill.style.width = "0%";
+      draftsBadge.classList.add("loading");
+      draftsBadge.removeAttribute("aria-valuenow");
+      draftsBadge.removeAttribute("aria-valuemax");
+      draftsBadge.title = "Could not load balance — click to retry";
     }
   }
 
@@ -695,6 +755,7 @@ function init(): void {
     try {
       const me = await fetchMe();
       draftsRemaining = me.draftsRemaining;
+      await bumpDraftsBarMax(me.draftsRemaining);
     } catch (e) {
       draftsRemaining = null;
       if (showErrorToast) {
@@ -757,7 +818,7 @@ function init(): void {
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") void refreshAccount();
   });
-  void refreshAccount();
+  void loadDraftsBarMax().then(() => refreshAccount());
 
   function updateCommentToggleVisualState(): void {
     if (!commentToggle) return;
@@ -1172,17 +1233,16 @@ function init(): void {
     const timeoutId = window.setTimeout(() => controller.abort(), STREAM_TIMEOUT_MS);
 
     try {
-      const stream = streamGenerate(
+      const stream = consumeHostedStream(
         { system, history: currentTrackedUser.followUpTurns },
         controller.signal,
+        (acc) => {
+          renderStructuredDrafts(out, acc || "\u2026");
+          chat.scrollTop = chat.scrollHeight;
+        },
       );
 
-      let acc = "";
-      for await (const delta of stream) {
-        acc += delta;
-        renderStructuredDrafts(out, acc || "\u2026");
-        chat.scrollTop = chat.scrollHeight;
-      }
+      const { text: acc } = await stream;
       const rendered = renderStructuredDrafts(out, acc || "");
       const finalText = rendered.displayText || acc;
       currentTrackedUser.followUpTurns.push({ role: "assistant", content: finalText });
@@ -1190,7 +1250,6 @@ function init(): void {
       const users = await getTrackedUsers();
       const idx = users.findIndex((u) => u.id === currentTrackedUser!.id);
       if (idx >= 0) { users[idx] = currentTrackedUser; await setTrackedUsers(users); }
-      await refreshAccount();
     } catch (e) {
       if (e instanceof ApiError && e.code === "insufficient_drafts") {
         draftsRemaining = 0;
@@ -1382,18 +1441,18 @@ function init(): void {
       });
 
       // Hosted path: client still builds system prompt (keeps summarization logic local)
-      const stream = streamGenerate({
-        system,
-        history: history.map((t) => ({ role: t.role, content: t.content })),
-      }, controller.signal);
-
-      let acc = "";
-      for await (const delta of stream) {
-        acc += delta;
-        const { visibleText } = parseThreadSummaryBlock(acc);
-        renderStructuredDrafts(out, visibleText || "\u2026");
-        chat.scrollTop = chat.scrollHeight;
-      }
+      const { text: acc } = await consumeHostedStream(
+        {
+          system,
+          history: history.map((t) => ({ role: t.role, content: t.content })),
+        },
+        controller.signal,
+        (partial) => {
+          const { visibleText } = parseThreadSummaryBlock(partial);
+          renderStructuredDrafts(out, visibleText || "\u2026");
+          chat.scrollTop = chat.scrollHeight;
+        },
+      );
 
       const { visibleText, extractedSummary } = parseThreadSummaryBlock(acc);
       const onSave = (draft: StructuredDraft): void => {
@@ -1430,7 +1489,6 @@ function init(): void {
 
       truncateConversationSummary(apiMessage, finalText);
       await saveCurrentConversation();
-      await refreshAccount();
       void maybeShowFeedbackModal();
     } catch (e) {
       // Roll back the optimistic user turn if generation failed before assistant reply

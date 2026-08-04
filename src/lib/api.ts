@@ -18,6 +18,10 @@ export interface MeResponse {
   draftsRemaining: number;
 }
 
+/** Appended by /api/generate after a successful stream + draft deduction. */
+export const DRAFTS_STREAM_FOOTER_RE = /<!--__TWIGHT_DRAFTS__:(\d+)-->$/;
+const FOOTER_HOLD_CHARS = 40;
+
 async function authHeaders(): Promise<HeadersInit> {
   const token = await getAccessToken();
   if (!token) throw new ApiError("Not signed in", 401, "unauthorized");
@@ -45,12 +49,13 @@ export interface GenerateRequest {
 }
 
 /**
- * Stream hosted generation. Yields text deltas (same shape as local streamReply).
+ * Stream hosted generation. Yields text deltas.
+ * On completion, the generator return value is the new drafts balance (if present).
  */
 export async function* streamGenerate(
   body: GenerateRequest,
   signal?: AbortSignal,
-): AsyncGenerator<string> {
+): AsyncGenerator<string, number | undefined> {
   const res = await fetch(`${API_BASE_URL}/api/generate`, {
     method: "POST",
     headers: await authHeaders(),
@@ -75,10 +80,31 @@ export async function* streamGenerate(
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
+  let tail = "";
+
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    const text = decoder.decode(value, { stream: true });
-    if (text) yield text;
+    tail += decoder.decode(value, { stream: true });
+
+    const holdBack = Math.min(tail.length, FOOTER_HOLD_CHARS);
+    const safeLen = tail.length - holdBack;
+    if (safeLen > 0) {
+      yield tail.slice(0, safeLen);
+      tail = tail.slice(safeLen);
+    }
   }
+
+  tail += decoder.decode();
+
+  const footerMatch = tail.match(DRAFTS_STREAM_FOOTER_RE);
+  if (footerMatch) {
+    const balance = Number.parseInt(footerMatch[1], 10);
+    tail = tail.slice(0, footerMatch.index);
+    if (tail) yield tail;
+    return Number.isFinite(balance) ? balance : undefined;
+  }
+
+  if (tail) yield tail;
+  return undefined;
 }
