@@ -1,17 +1,11 @@
-import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import { corsHeaders, HOSTED_GEMINI_MODEL, requireUser } from "./_lib/supabase";
+const { GoogleGenerativeAI } = require("@google/generative-ai");
+const { corsHeaders, HOSTED_GEMINI_MODEL, requireUser } = require("./_lib/supabase");
 
 const MAX_HISTORY_TURNS = 6;
-const MAX_SYSTEM_CHARS = 24_000;
-const MAX_MESSAGE_CHARS = 8_000;
+const MAX_SYSTEM_CHARS = 24000;
+const MAX_MESSAGE_CHARS = 8000;
 
-interface ChatTurn {
-  role: "user" | "assistant";
-  content: string;
-}
-
-export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
+module.exports = async function handler(req, res) {
   const headers = corsHeaders(req.headers.origin);
   for (const [k, v] of Object.entries(headers)) res.setHeader(k, v);
 
@@ -32,14 +26,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       return;
     }
 
-    const body = req.body as { system?: unknown; history?: unknown };
-    if (typeof body?.system !== "string" || !Array.isArray(body.history)) {
+    const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : req.body || {};
+    if (typeof body.system !== "string" || !Array.isArray(body.history)) {
       res.status(400).json({ error: "Invalid body — expected { system, history }" });
       return;
     }
 
     const system = body.system.slice(0, MAX_SYSTEM_CHARS);
-    const history = (body.history as ChatTurn[])
+    const history = body.history
       .filter((t) => t && (t.role === "user" || t.role === "assistant") && typeof t.content === "string")
       .map((t) => ({
         role: t.role,
@@ -51,7 +45,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       return;
     }
 
-    // Deduct one draft before calling the model
     const { data: newBalance, error: deductErr } = await admin.rpc("deduct_draft", {
       p_user_id: user.id,
     });
@@ -75,9 +68,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
         ? history.slice(history.length - MAX_HISTORY_TURNS)
         : history;
 
-    const lastTurn = trimmed.at(-1);
+    const lastTurn = trimmed[trimmed.length - 1];
     const priorTurns = trimmed.slice(0, -1);
-    const lastUserMsg = lastTurn?.content ?? "";
+    const lastUserMsg = (lastTurn && lastTurn.content) || "";
 
     const geminiHistory = priorTurns.map((t) => ({
       role: t.role === "assistant" ? "model" : "user",
@@ -96,7 +89,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
 
     res.setHeader("Content-Type", "text/plain; charset=utf-8");
     res.setHeader("Cache-Control", "no-cache, no-transform");
-    res.setHeader("X-Drafts-Remaining", String(newBalance ?? ""));
+    res.setHeader("X-Drafts-Remaining", String(newBalance != null ? newBalance : ""));
     res.status(200);
 
     for await (const chunk of result.stream) {
@@ -105,14 +98,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     }
     res.end();
   } catch (e) {
-    const err = e as { status?: number; code?: string; message?: string };
     if (res.headersSent) {
       res.end();
       return;
     }
-    res.status(err.status || 500).json({
-      error: err.message || "Server error",
-      code: err.code,
+    res.status(e.status || 500).json({
+      error: e.message || "Server error",
+      code: e.code,
     });
   }
-}
+};

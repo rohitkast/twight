@@ -8,11 +8,15 @@
 
 ## 2. Supabase Auth redirect URL (required for Chrome sign-in)
 
-Supabase → Authentication → URL Configuration → Redirect URLs → add:
+Supabase → Authentication → URL Configuration → Redirect URLs → add **both**:
 
 ```
+https://knoflcakdhglkbfkickfpiepnphpbiii.chromiumapp.org/auth
 https://fpoaifndhjgaicoghecihpekgnhbiffb.chromiumapp.org/auth
 ```
+
+- First = local unpacked / Dev Mode ID  
+- Second = Chrome Web Store ID  
 
 (Also keep your existing Supabase Google callback.)
 
@@ -29,11 +33,18 @@ https://fpoaifndhjgaicoghecihpekgnhbiffb.chromiumapp.org/auth
 | `POLAR_ORGANIZATION_ID` | `c512dec2-9c86-4ea6-b112-e7b486c7d013` |
 | `POLAR_PRODUCT_ID` | `8e149b00-a6af-4db6-9829-7b983438c08f` |
 
-## 4. Deploy Vercel
+## 4. Deploy Vercel (required for draft balance)
 
-Push / redeploy so `/api/me`, `/api/generate`, `/api/webhooks/polar`, `/pricing`, `/success` go live.
+Push these API changes and redeploy. Then open:
 
-Webhook must stay: `https://twight.vercel.app/api/webhooks/polar`
+```
+https://twight.vercel.app/api/health
+```
+
+You should see JSON like `{ "ok": true, "hasServiceRole": true, ... }`.  
+If `hasServiceRole` is `false`, add `SUPABASE_SERVICE_ROLE_KEY` in Vercel env and redeploy.
+
+Until `/api/me` works, the extension badge stays on `… drafts`.
 
 ## 5. Load the extension
 

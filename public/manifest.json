@@ -16,9 +16,7 @@
   "host_permissions": [
     "https://*.reddit.com/*",
     "https://twight.vercel.app/*",
-    "https://rcbnajyufootjbpncwxz.supabase.co/*",
-    "https://api.anthropic.com/*",
-    "https://generativelanguage.googleapis.com/*"
+    "https://rcbnajyufootjbpncwxz.supabase.co/*"
   ],
   "background": {
     "service_worker": "background.js"

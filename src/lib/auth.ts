@@ -49,8 +49,11 @@ export async function getCurrentUser(): Promise<User | null> {
 
 /**
  * Google OAuth via chrome.identity.
- * Requires this redirect URL in Supabase Auth → URL Configuration → Redirect URLs:
- *   https://<extension-id>.chromiumapp.org/auth
+ * Add the redirect from chrome.identity.getRedirectURL("auth") to Supabase
+ * Auth → URL Configuration → Redirect URLs. Dev Mode ID example:
+ *   https://knoflcakdhglkbfkickfpiepnphpbiii.chromiumapp.org/auth
+ * Store ID:
+ *   https://fpoaifndhjgaicoghecihpekgnhbiffb.chromiumapp.org/auth
  */
 export async function signInWithGoogle(): Promise<Session> {
   const redirectUrl = chrome.identity.getRedirectURL("auth");

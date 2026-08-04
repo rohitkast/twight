@@ -677,12 +677,14 @@ function init(): void {
     if (signedIn && draftsRemaining !== null) {
       draftsBadge.textContent = `${draftsRemaining} draft${draftsRemaining === 1 ? "" : "s"}`;
       draftsBadge.classList.toggle("low", draftsRemaining <= 2);
+      draftsBadge.title = "Draft balance — click to buy more";
     } else if (signedIn) {
       draftsBadge.textContent = "… drafts";
+      draftsBadge.title = "Could not load balance — click to retry, or buy more";
     }
   }
 
-  async function refreshAccount(): Promise<void> {
+  async function refreshAccount(showErrorToast = false): Promise<void> {
     const user = await getCurrentUser();
     signedIn = !!user;
     if (!user) {
@@ -693,8 +695,12 @@ function init(): void {
     try {
       const me = await fetchMe();
       draftsRemaining = me.draftsRemaining;
-    } catch {
+    } catch (e) {
       draftsRemaining = null;
+      if (showErrorToast) {
+        showToast(e instanceof Error ? e.message : "Could not load draft balance");
+      }
+      console.error("fetchMe failed", e);
     }
     updateAuthUi();
   }
@@ -705,8 +711,11 @@ function init(): void {
       authModalGoogle.disabled = true;
       await signInWithGoogle();
       authModal.close();
-      showToast("Signed in — 10 free drafts if you're new");
-      await refreshAccount();
+      showToast("Signed in");
+      await refreshAccount(true);
+      if (draftsRemaining !== null) {
+        showToast(`${draftsRemaining} draft${draftsRemaining === 1 ? "" : "s"} remaining`);
+      }
     } catch (e) {
       showToast(e instanceof Error ? e.message : "Sign-in failed");
     } finally {
@@ -731,7 +740,14 @@ function init(): void {
 
   signInBtn.addEventListener("click", () => { void handleSignIn(); });
   authModalGoogle.addEventListener("click", () => { void handleSignIn(); });
-  draftsBadge.addEventListener("click", () => openPricing());
+  draftsBadge.addEventListener("click", () => {
+    // If balance failed to load, retry first; otherwise open pricing
+    if (signedIn && draftsRemaining === null) {
+      void refreshAccount(true);
+      return;
+    }
+    openPricing();
+  });
   draftsModalBuy.addEventListener("click", () => {
     draftsModal.close();
     openPricing();
