@@ -53,10 +53,6 @@ function resolveHostedGeminiModel() {
     console.warn(`Invalid HOSTED_GEMINI_MODEL="${raw}", falling back to ${fallback}`);
     return fallback;
   }
-  if (legacyMap[short]) {
-    console.warn(`HOSTED_GEMINI_MODEL=${short} unavailable for new keys — using ${legacyMap[short]}`);
-    return legacyMap[short];
-  }
   return short;
 }
 
