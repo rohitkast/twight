@@ -1,82 +1,108 @@
-body {
-  font: 14px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  max-width: 560px;
+body.goals-page {
+  font-family: var(--rra-font, Inter, system-ui, sans-serif);
+  max-width: 640px;
   margin: 32px auto;
-  padding: 0 20px;
-  color: #1a1a1b;
+  padding: 0 20px 48px;
+  color: var(--rra-fg, #141417);
+  background: var(--rra-bg, #fff);
 }
 
-h1 { font-size: 20px; margin-bottom: 4px; }
-h2 { font-size: 16px; margin-top: 0; margin-bottom: 16px; }
-
-.sub {
-  color: #7c7c7c;
-  font-size: 13px;
-  margin-top: 0;
-  margin-bottom: 24px;
+.goals-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 20px;
 }
 
-label {
-  display: block;
+.goals-header h1 {
+  font-size: 1.35rem;
+  font-weight: 700;
+  margin: 0 0 4px;
+}
+
+.goals-header .sub {
+  color: var(--rra-muted, #6b7280);
+  font-size: 0.875rem;
+  margin: 0;
+  max-width: 42ch;
+  line-height: 1.5;
+}
+
+.goals-auth {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+h2 {
+  font-size: 1.05rem;
   font-weight: 600;
-  margin: 12px 0 4px;
+  margin: 0 0 12px;
 }
 
-input, textarea {
-  width: 100%;
-  padding: 8px;
-  border: 1px solid #d0d0d0;
-  border-radius: 8px;
-  font: inherit;
-  box-sizing: border-box;
-}
-textarea { resize: vertical; }
-
-.form-actions { margin-top: 12px; }
-
-button {
-  padding: 8px 16px;
-  border: none;
-  border-radius: 8px;
-  background: #ff4500;
-  color: #fff;
+h3 {
+  font-size: 0.95rem;
   font-weight: 600;
-  cursor: pointer;
-}
-button:hover { opacity: 0.9; }
-
-hr {
-  margin: 28px 0;
-  border: none;
-  border-top: 1px solid #e3e3e3;
+  margin: 0;
 }
 
-#goal-list { display: flex; flex-direction: column; gap: 8px; }
+.goal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 
 .goal-row {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   padding: 12px;
-  border: 1px solid #e3e3e3;
-  border-radius: 8px;
+  border: 1px solid var(--rra-border, #e8eaef);
+  border-radius: var(--rra-radius, 10px);
   gap: 12px;
+  background: var(--rra-surface-raised, #fff);
+}
+
+.goal-row.needs-upgrade {
+  border-color: color-mix(in oklab, var(--color-warning, #f59e0b) 45%, var(--rra-border));
+  background: color-mix(in oklab, var(--color-warning, #f59e0b) 8%, white);
 }
 
 .goal-info {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 4px;
   flex: 1;
   min-width: 0;
 }
-.goal-info strong { font-size: 14px; }
+
+.goal-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.goal-info strong {
+  font-size: 0.9rem;
+}
+
 .goal-info .desc {
-  font-size: 13px;
-  color: #7c7c7c;
+  font-size: 0.8rem;
+  color: var(--rra-muted, #6b7280);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.goal-chips-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
 }
 
 .goal-actions {
@@ -84,21 +110,115 @@ hr {
   gap: 6px;
   flex-shrink: 0;
 }
-.goal-actions button {
-  padding: 5px 10px;
-  font-size: 13px;
-  background: #f0f0f0;
-  color: #1a1a1b;
-  font-weight: 500;
+
+#upgrade-banner {
+  margin-bottom: 12px;
 }
-.btn-delete { background: #fef0ee; color: #c0392b; }
 
-.muted { color: #7c7c7c; }
+.playbook-section {
+  margin-top: 20px;
+  padding: 14px;
+  border: 1px solid var(--rra-border, #e8eaef);
+  border-radius: var(--rra-radius, 10px);
+  background: var(--rra-surface, #f7f8fa);
+}
 
-#status {
+.playbook-head {
+  margin-bottom: 10px;
+}
+
+.playbook-hint {
+  margin: 4px 0 0;
+  font-size: 0.75rem;
+  color: var(--rra-muted, #6b7280);
+}
+
+.playbook-empty,
+.playbook-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 88px;
+  padding: 16px;
+  border: 1px dashed var(--rra-border-strong, #d5dae3);
+  border-radius: var(--rra-radius-sm, 8px);
+  background: #fff;
+}
+
+.playbook-loading.hidden,
+.playbook-empty.hidden,
+.playbook-text.hidden,
+.targets-wrap.hidden,
+#upgrade-banner.hidden,
+.hidden {
+  display: none !important;
+}
+
+.playbook-text {
+  margin: 0;
+  padding: 12px;
+  max-height: 280px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--rra-font, Inter, system-ui, sans-serif);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  border-radius: var(--rra-radius-sm, 8px);
+  border: 1px solid var(--rra-border, #e8eaef);
+  background: #fff;
+  color: var(--rra-fg, #141417);
+  user-select: text;
+  cursor: default;
+}
+
+.targets-wrap {
+  margin-top: 14px;
+}
+
+.target-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 28px;
+}
+
+.target-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+}
+
+.target-chip .chip-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
+}
+
+.form-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.status {
   min-height: 1.4em;
-  font-size: 13px;
+  font-size: 0.8rem;
   margin-top: 8px;
 }
-.status.ok { color: #27ae60; }
-.status.error { color: #c0392b; }
+
+.status.ok {
+  color: var(--color-success, #16a34a);
+}
+
+.status.error {
+  color: var(--color-error, #dc2626);
+}
+
+.muted {
+  color: var(--rra-muted, #6b7280);
+}

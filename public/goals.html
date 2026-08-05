@@ -1,34 +1,98 @@
 <!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <link rel="stylesheet" href="goals.css" />
-  </head>
-  <body>
-    <h1>Goals</h1>
-    <p class="sub">
-      Goals tell Claude what you're trying to achieve on each thread — marketing an app,
-      finding feedback clients, etc. Switch goals from the side panel like changing a chat model.
-    </p>
+<html lang="en" data-theme="light">
 
-    <div id="goal-list"></div>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Twight · Goals</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@5" rel="stylesheet" type="text/css" />
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@5/themes.css" rel="stylesheet" type="text/css" />
+  <link rel="stylesheet" href="rra-tokens.css" />
+  <link rel="stylesheet" href="goals.css" />
+</head>
 
-    <hr />
-
-    <h2 id="form-title">Add a goal</h2>
-
-    <label for="goal-name">Name</label>
-    <input id="goal-name" type="text" placeholder="e.g. Market my SaaS app" />
-
-    <label for="goal-desc">Description</label>
-    <textarea id="goal-desc" rows="4"
-      placeholder="e.g. I'm building a tool for indie developers. Help me find people who'd genuinely benefit from it and craft replies that feel authentic, not promotional."></textarea>
-
-    <div class="form-actions">
-      <button id="goal-save">Add goal</button>
+<body class="goals-page">
+  <header class="goals-header">
+    <div>
+      <h1>Goals</h1>
+      <p class="sub">
+        Tell us what you offer and what you want from drafts. We'll build an outreach playbook
+        so replies target the right people.
+      </p>
     </div>
-    <p id="status"></p>
+    <div class="goals-auth">
+      <span id="auth-status" class="text-sm text-base-content/60">Checking sign-in…</span>
+      <button id="sign-in-btn" type="button" class="btn btn-primary btn-sm hidden">Sign in</button>
+    </div>
+  </header>
 
-    <script src="goals.js"></script>
-  </body>
+  <div id="goal-list" class="goal-list"></div>
+
+  <div class="divider"></div>
+
+  <h2 id="form-title">Add a goal</h2>
+
+  <div id="upgrade-banner" class="alert alert-warning alert-soft hidden" role="alert">
+    <span>This goal needs a playbook before you can use it for drafts. Fill the fields and generate one.</span>
+  </div>
+
+  <label class="label" for="goal-name"><span class="label-text font-semibold">Name</span></label>
+  <input id="goal-name" type="text" class="input w-full" placeholder="e.g. Get Twight feedback" />
+
+  <label class="label" for="goal-product"><span class="label-text font-semibold">What are you offering?</span></label>
+  <textarea id="goal-product" class="textarea w-full" rows="3"
+    placeholder="e.g. Twight — a Chrome extension that drafts Reddit replies/DMs from thread context. Free, BYOK."></textarea>
+
+  <label class="label" for="goal-intent"><span class="label-text font-semibold">What do you want from drafts?</span></label>
+  <textarea id="goal-intent" class="textarea w-full" rows="3"
+    placeholder="e.g. Honest feedback from people who already do Reddit outreach; soft asks, not hard pitches."></textarea>
+
+  <label class="label" for="goal-avoid"><span class="label-text font-semibold">Anything to avoid? <span
+        class="font-normal text-base-content/50">(optional)</span></span></label>
+  <textarea id="goal-avoid" class="textarea w-full" rows="2"
+    placeholder="e.g. Don't DM milestone posts with no Reddit signal. Skip competing outreach tools."></textarea>
+
+  <section id="playbook-section" class="playbook-section">
+    <div class="playbook-head">
+      <h3>Outreach playbook</h3>
+      <p class="playbook-hint">Generated for you — locked. Regenerate costs 1 draft (first gen is free).</p>
+    </div>
+
+    <div id="playbook-empty" class="playbook-empty">
+      <p class="text-sm text-base-content/60">Playbook appears here after you generate it.</p>
+    </div>
+
+    <div id="playbook-loading" class="playbook-loading hidden">
+      <span class="loading loading-spinner loading-md"></span>
+      <span class="text-sm">Building your playbook…</span>
+    </div>
+
+    <pre id="playbook-text" class="playbook-text hidden" aria-readonly="true"></pre>
+
+    <div id="targets-wrap" class="targets-wrap hidden">
+      <label class="label"><span class="label-text font-semibold">Target types</span></label>
+      <p class="text-xs text-base-content/50 mb-2">Who to look for in threads. Remove or add your own.</p>
+      <div id="target-chips" class="target-chips"></div>
+      <div class="chip-add join w-full mt-2">
+        <input id="chip-input" type="text" class="input input-sm join-item flex-1"
+          placeholder="Add a target type…" maxlength="60" />
+        <button id="chip-add-btn" type="button" class="btn btn-sm join-item">Add</button>
+      </div>
+    </div>
+  </section>
+
+  <div class="form-actions">
+    <button id="goal-generate" type="button" class="btn btn-primary">Generate playbook</button>
+    <button id="goal-regenerate" type="button" class="btn btn-ghost hidden">Regenerate (1 draft)</button>
+    <button id="goal-save" type="button" class="btn" disabled>Save goal</button>
+    <button id="goal-cancel" type="button" class="btn btn-ghost hidden">Cancel</button>
+  </div>
+  <p id="status" class="status" role="status"></p>
+
+  <script src="goals.js"></script>
+</body>
+
 </html>

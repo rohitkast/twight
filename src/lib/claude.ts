@@ -1,5 +1,35 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { RedditThread, Goal } from "./types";
+import { goalHasPlaybook } from "./types";
+
+/** Format goal section for system prompts — prefer playbook + chips over raw description. */
+export function formatGoalSection(goal: Goal | null): string | null {
+  if (!goal) return null;
+  if (goalHasPlaybook(goal)) {
+    const parts = [`# Goal\n${goal.name}`, "", goal.playbook!.trim()];
+    if (goal.targetTypes?.length) {
+      parts.push(
+        "",
+        "# Target types (prefer these; skip weak fits)",
+        ...goal.targetTypes.map((t) => `- ${t}`),
+      );
+    }
+    return parts.join("\n");
+  }
+  return `# Goal\n${goal.name}: ${goal.description}`;
+}
+
+/** Keywords for comment ranking when the user has no custom instruction. */
+export function goalRankingText(goal: Goal): string {
+  const bits = [
+    goal.name,
+    goal.product,
+    goal.intent,
+    ...(goal.targetTypes ?? []),
+    !goal.product && !goal.intent ? goal.description : "",
+  ].filter((s) => !!s?.trim());
+  return bits.join(" — ");
+}
 
 export const MODEL = "claude-sonnet-4-5";
 
@@ -71,6 +101,9 @@ Given a Reddit thread:
 - You can intentionally not use capital letters, use ... instead of big dashes, be natural like a human.
 - Try to be consice most of the times unless a big explanation is necessary or a user is asking to explain details      regarding the product/service.
 - Ground DMs in what the specific user actually wrote in the thread.
+- Prefer people who match the goal's target types. Skip weak fits (milestone posters with no relevant signal, competitors, wrong channel).
+- Never invent facts or channels (e.g. do not assume they use Reddit unless they said so). Prefer a public comment over a cold DM on celebration/milestone posts.
+- Helps first, pitch second. Soft, specific CTA — avoid vague "would love your thoughts if you ever…".
 - Give the draft directly. Ask one clarifying question only if truly ambiguous.
 - Never invent facts beyond what is provided.
 - Comments may be truncated for brevity. Never mention or allude to truncation, missing text, or incomplete comments in any draft.`;
@@ -128,7 +161,7 @@ export function buildSystemPrompt(
     includeComments = true,
   } = context;
 
-  const goalSection = goal ? `# Goal\n${goal.name}: ${goal.description}` : null;
+  const goalSection = formatGoalSection(goal);
 
   if (!thread && !summary.trim()) {
     const parts = [BASE_SYSTEM];
@@ -223,7 +256,7 @@ export function buildConversionSystemPrompt(
   threadSummary: string,
   goal: Goal | null,
 ): string {
-  const goalSection = goal ? `# Goal\n${goal.name}: ${goal.description}` : null;
+  const goalSection = formatGoalSection(goal);
   const parts = [
     BASE_SYSTEM,
     "",

@@ -1,8 +1,9 @@
-import { buildSystemPrompt, buildConversionSystemPrompt, type ChatTurn } from "./lib/claude";
+import { buildSystemPrompt, buildConversionSystemPrompt, goalRankingText, type ChatTurn } from "./lib/claude";
 import { ApiError, fetchMe, streamGenerate } from "./lib/api";
 import { getCurrentUser, signInWithGoogle } from "./lib/auth";
 import { BYOK_ENABLED, FREE_DRAFTS_ON_SIGNUP, PRICING_URL } from "./lib/config";
 import type { RedditThread, ExtractResponse, Goal, ScrollToUserResponse } from "./lib/types";
+import { goalHasPlaybook, goalNeedsUpgrade } from "./lib/types";
 import { marked } from "marked";
 
 // BYOK path parked — re-enable with BYOK_ENABLED + restore getClient/streamReply imports.
@@ -71,6 +72,8 @@ interface TrackedUser {
   threadSummary: string;
   goalName: string;
   goalDescription: string;
+  goalPlaybook?: string;
+  goalTargetTypes?: string[];
   followUpTurns: ChatTurn[];
 }
 
@@ -275,20 +278,35 @@ async function setTrackedUsers(users: TrackedUser[]): Promise<void> {
   await chrome.storage.local.set({ [TRACKED_USERS_KEY]: users });
 }
 
-async function saveTrackedUser(user: TrackedUser): Promise<void> {
+async function saveTrackedUser(user: TrackedUser): Promise<boolean> {
   const users = await getTrackedUsers();
   const alreadyExists = users.some((u) => u.username === user.username && u.postUrl && u.postUrl === user.postUrl);
   if (alreadyExists) {
     showToast(`u/${user.username} is already in your chat list for this post.`);
-    return;
+    return false;
   }
   if (users.length >= TRACKED_USERS_MAX) {
     showToast("Chat list is full (50 max). Open Chat List and delete some old contacts.");
-    return;
+    return false;
   }
   users.unshift(user);
   await setTrackedUsers(users);
   showToast(`Saved u/${user.username} to Chat List ✓`);
+  return true;
+}
+
+function dmSaveKey(username: string, postUrl: string): string {
+  return `${username}\0${postUrl}`;
+}
+
+function isSavableDm(draft: StructuredDraft): boolean {
+  return draft.kind === "dm" && !!draft.targetUser;
+}
+
+interface DraftSaveContext {
+  postUrl: string;
+  savedDmKeys: Set<string>;
+  onSave: (draft: StructuredDraft) => Promise<boolean>;
 }
 
 async function saveCurrentConversation(): Promise<void> {
@@ -387,7 +405,7 @@ function renderDraftFeed(
   drafts: StructuredDraft[],
   remainder: string,
   hasPartialFrame: boolean,
-  onSave?: (draft: StructuredDraft) => void,
+  saveContext?: DraftSaveContext,
 ): void {
   bubble.classList.add("structured");
   bubble.classList.remove("thinking");
@@ -462,17 +480,33 @@ function renderDraftFeed(
     });
     actions.appendChild(copyBtn);
 
-    if (onSave && draft.targetUser) {
+    if (saveContext && isSavableDm(draft)) {
+      const dmKey = dmSaveKey(draft.targetUser!, saveContext.postUrl);
+      const alreadySaved = saveContext.savedDmKeys.has(dmKey);
       const saveBtn = document.createElement("button");
       saveBtn.type = "button";
-      saveBtn.className = "btn btn-xs btn-primary";
-      saveBtn.textContent = "Save";
-      saveBtn.setAttribute("aria-label", `Save draft for u/${draft.targetUser} to chat list`);
-      saveBtn.addEventListener("click", (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        onSave(draft);
-      });
+      saveBtn.className = alreadySaved ? "btn btn-xs btn-ghost" : "btn btn-xs btn-primary";
+      saveBtn.textContent = alreadySaved ? "Saved" : "Save";
+      saveBtn.disabled = alreadySaved;
+      saveBtn.setAttribute("aria-label", alreadySaved
+        ? `u/${draft.targetUser} already in Chat List for this post`
+        : `Save draft for u/${draft.targetUser} to chat list`);
+      if (!alreadySaved) {
+        saveBtn.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          void (async () => {
+            const saved = await saveContext.onSave(draft);
+            if (!saved) return;
+            saveContext.savedDmKeys.add(dmKey);
+            saveBtn.textContent = "Saved";
+            saveBtn.disabled = true;
+            saveBtn.classList.remove("btn-primary");
+            saveBtn.classList.add("btn-ghost");
+            saveBtn.setAttribute("aria-label", `u/${draft.targetUser} already in Chat List for this post`);
+          })();
+        });
+      }
       actions.appendChild(saveBtn);
 
       const helpBtn = document.createElement("button");
@@ -557,7 +591,7 @@ function renderDraftFeed(
 function renderStructuredDrafts(
   bubble: HTMLElement,
   sourceText: string,
-  onSave?: (draft: StructuredDraft) => void,
+  saveContext?: DraftSaveContext,
 ): { displayText: string; hasStructuredDrafts: boolean; drafts: StructuredDraft[]; remainder: string } {
   const { drafts, remainder, hasPartialFrame } = parseStructuredDrafts(sourceText);
   const hasItemToken = sourceText.includes(ITEM_OPEN) || sourceText.includes(ITEM_CLOSE);
@@ -575,7 +609,7 @@ function renderStructuredDrafts(
 
   const partialStart = hasPartialFrame ? remainder.lastIndexOf(ITEM_OPEN) : -1;
   const safeRemainder = hasPartialFrame && partialStart >= 0 ? remainder.slice(0, partialStart).trim() : remainder;
-  renderDraftFeed(bubble, drafts, safeRemainder, hasPartialFrame, onSave);
+  renderDraftFeed(bubble, drafts, safeRemainder, hasPartialFrame, saveContext);
   return {
     displayText: serializeDraftsForHistory(drafts, safeRemainder),
     hasStructuredDrafts: true,
@@ -665,6 +699,13 @@ function init(): void {
   let modelProvider: "claude" | "gemini" = "claude";
   let instructionActive = false;
   let selectedHistoryPostKey: string | null = null;
+  let historyDetailContext: {
+    url: string;
+    title: string;
+    subreddit: string;
+    threadSummary: string;
+  } | null = null;
+  let trackedUsersCache: TrackedUser[] = [];
   let currentTrackedUser: TrackedUser | null = null;
   let selectedMood: string | null = null;
   let draftsRemaining: number | null = null;
@@ -673,6 +714,77 @@ function init(): void {
 
   function openPricing(): void {
     chrome.tabs.create({ url: PRICING_URL });
+  }
+
+  async function refreshTrackedUsersCache(): Promise<void> {
+    trackedUsersCache = await getTrackedUsers();
+  }
+
+  function buildSavedDmKeys(postUrl: string): Set<string> {
+    const keys = new Set<string>();
+    for (const u of trackedUsersCache) {
+      if (u.postUrl === postUrl) keys.add(dmSaveKey(u.username, postUrl));
+    }
+    return keys;
+  }
+
+  function getPostContextForSave(): {
+    postUrl: string;
+    postTitle: string;
+    subreddit: string;
+    threadSummaryText: string;
+  } | null {
+    if (thread?.url) {
+      return {
+        postUrl: thread.url,
+        postTitle: thread.title || "(untitled)",
+        subreddit: thread.subreddit || "?",
+        threadSummaryText: threadSummary || fallbackThreadSummary(thread),
+      };
+    }
+    if (historyDetailContext?.url) {
+      return {
+        postUrl: historyDetailContext.url,
+        postTitle: historyDetailContext.title || "(untitled)",
+        subreddit: historyDetailContext.subreddit || "?",
+        threadSummaryText: historyDetailContext.threadSummary,
+      };
+    }
+    return null;
+  }
+
+  function getSaveContext(): DraftSaveContext | undefined {
+    const post = getPostContextForSave();
+    if (!post) return undefined;
+    return {
+      postUrl: post.postUrl,
+      savedDmKeys: buildSavedDmKeys(post.postUrl),
+      onSave: async (draft: StructuredDraft): Promise<boolean> => {
+        if (!isSavableDm(draft)) return false;
+        const ctx = getPostContextForSave();
+        if (!ctx) return false;
+        const saved = await saveTrackedUser({
+          id: crypto.randomUUID(),
+          savedAt: Date.now(),
+          username: draft.targetUser!,
+          kind: draft.kind,
+          originalDraft: draft.text,
+          postTitle: ctx.postTitle,
+          postUrl: ctx.postUrl,
+          subreddit: ctx.subreddit,
+          threadSummary: ctx.threadSummaryText,
+          goalName: activeGoal?.name ?? "",
+          goalDescription: activeGoal?.description ?? "",
+          goalPlaybook: activeGoal?.playbook,
+          goalTargetTypes: activeGoal?.targetTypes,
+          followUpTurns: [],
+        });
+        if (saved) {
+          trackedUsersCache = await getTrackedUsers();
+        }
+        return saved;
+      },
+    };
   }
 
   async function loadDraftsBarMax(): Promise<void> {
@@ -819,6 +931,7 @@ function init(): void {
     if (document.visibilityState === "visible") void refreshAccount();
   });
   void loadDraftsBarMax().then(() => refreshAccount());
+  void refreshTrackedUsersCache();
 
   function updateCommentToggleVisualState(): void {
     if (!commentToggle) return;
@@ -870,28 +983,31 @@ function init(): void {
 
     const el = document.createElement("div");
     el.className = `bubble ${turn.role}`;
+    const saveContext = (mode === "live" || mode === "history-detail") ? getSaveContext() : undefined;
 
     if (turn.role === "user") {
       el.textContent = turn.content;
     } else if (turn.structuredDrafts && turn.structuredDrafts.length > 0) {
       // Use saved structured drafts directly — same card UI as live chat
-      renderDraftFeed(el, turn.structuredDrafts, turn.structuredRemainder || "", false);
+      renderDraftFeed(el, turn.structuredDrafts, turn.structuredRemainder || "", false, saveContext);
     } else {
       // Fallback: re-parse content (handles old saved chats without structuredDrafts)
-      renderStructuredDrafts(el, turn.content || "");
+      renderStructuredDrafts(el, turn.content || "", saveContext);
     }
 
     chat.appendChild(el);
     chat.scrollTop = chat.scrollHeight;
   }
 
-  function renderTranscript(turns: ConversationTurn[]): void {
+  async function renderTranscript(turns: ConversationTurn[]): Promise<void> {
+    await refreshTrackedUsersCache();
     chat.innerHTML = "";
     for (const turn of turns) renderTurn(turn);
   }
 
   function setMode(next: "live" | "history-list" | "history-detail" | "chatlist-list" | "chatlist-detail"): void {
     mode = next;
+    if (next !== "history-detail") historyDetailContext = null;
     const isLive = next === "live";
     const isHistoryDetail = next === "history-detail";
     const isChatListDetail = next === "chatlist-detail";
@@ -938,7 +1054,7 @@ function init(): void {
         chat.innerHTML = "";
         if (!hasLoaded) renderOnboarding();
       } else {
-        renderTranscript(history);
+        void renderTranscript(history);
       }
     }
   }
@@ -951,7 +1067,7 @@ function init(): void {
       `<ol class="onboarding-steps">` +
       `<li><strong>Sign in with Google</strong> &mdash; new accounts get 10 free drafts.</li>` +
       `<li><strong>Open a Reddit post</strong> where your target users are active, then click <strong>Load thread from page</strong> above.</li>` +
-      `<li><strong>Select a goal &amp; hit Generate</strong> &mdash; get tailored replies, comments, or DMs.</li>` +
+      `<li><strong>Select a goal &amp; hit Generate</strong> &mdash; get tailored replies, comments, or DMs. Goals need an AI playbook (built on the Goals page).</li>` +
       `<li><strong>Pick the best draft.</strong> For DMs, click <strong>Save</strong> &mdash; if they reply, open <strong>Chat List</strong> to continue with full thread context.</li>` +
       `</ol>`;
     chat.appendChild(card);
@@ -1010,10 +1126,16 @@ function init(): void {
 
       openBtn.addEventListener("click", () => {
         selectedHistoryPostKey = item.postKey;
+        historyDetailContext = {
+          url: item.url,
+          title: item.title || "(untitled)",
+          subreddit: item.subreddit || "?",
+          threadSummary: item.threadSummary || "",
+        };
         conversationSummary = item.summary || "";
         threadSummary = item.threadSummary || "";
         setMode("history-detail");
-        renderTranscript((item.turns || []) as ConversationTurn[]);
+        void renderTranscript((item.turns || []) as ConversationTurn[]);
       });
 
       const ICON_TRASH = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="14" height="14"><path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>`;
@@ -1209,7 +1331,13 @@ function init(): void {
     }
 
     const goal: Goal | null = currentTrackedUser.goalName
-      ? { id: "", name: currentTrackedUser.goalName, description: currentTrackedUser.goalDescription }
+      ? {
+          id: "",
+          name: currentTrackedUser.goalName,
+          description: currentTrackedUser.goalDescription,
+          playbook: currentTrackedUser.goalPlaybook,
+          targetTypes: currentTrackedUser.goalTargetTypes,
+        }
       : null;
 
     const system = buildConversionSystemPrompt(
@@ -1274,7 +1402,7 @@ function init(): void {
     for (const g of goals) {
       const opt = document.createElement("option");
       opt.value = g.id;
-      opt.textContent = g.name;
+      opt.textContent = goalNeedsUpgrade(g) ? `⚠ ${g.name}` : g.name;
       goalSelect.appendChild(opt);
     }
     goalSelect.value = activeGoalId ?? "";
@@ -1291,12 +1419,19 @@ function init(): void {
     const id = goalSelect.value;
     activeGoal = id ? (goals.find((g) => g.id === id) ?? null) : null;
     await chrome.storage.local.set({ activeGoalId: id || null });
+    if (activeGoal && goalNeedsUpgrade(activeGoal)) {
+      showToast("This goal needs a playbook — open Goals to upgrade it.");
+    }
   });
 
   chrome.storage.onChanged.addListener((changes) => {
     if (changes.goals || changes.activeGoalId) void loadGoals();
     if (changes[CHAT_HISTORY_KEY] && mode === "history-list") void renderHistoryList();
-    if (changes[TRACKED_USERS_KEY] && mode === "chatlist-list") void renderChatList();
+    if (changes[TRACKED_USERS_KEY]) {
+      void refreshTrackedUsersCache().then(() => {
+        if (mode === "chatlist-list") void renderChatList();
+      });
+    }
     if (changes[INCLUDE_COMMENTS_KEY]) {
       includeComments = Boolean(changes[INCLUDE_COMMENTS_KEY].newValue);
       if (includeCommentsInput) includeCommentsInput.checked = includeComments;
@@ -1360,6 +1495,7 @@ function init(): void {
       conversationSummary = "";
       threadSummary = "";
       selectedHistoryPostKey = null;
+      historyDetailContext = null;
 
       const { meta } = resp;
       let countMsg = `${thread.comments.length} comment${thread.comments.length !== 1 ? "s" : ""}`;
@@ -1394,6 +1530,7 @@ function init(): void {
     conversationSummary = "";
     threadSummary = "";
     hasLoaded = false;
+    historyDetailContext = null;
     chat.innerHTML = "";
     summary.textContent = "No thread loaded.";
     summary.className = "muted";
@@ -1409,6 +1546,11 @@ function init(): void {
       showToast("Select a goal first — click the goal dropdown to choose one.");
       return;
     }
+    if (!goalHasPlaybook(activeGoal)) {
+      showToast("Upgrade this goal with a playbook first (Goals page).");
+      chrome.tabs.create({ url: chrome.runtime.getURL("goals.html") });
+      return;
+    }
     if (!thread) {
       addBubble("assistant", "Load a Reddit thread first by clicking **Load thread from page**.");
       return;
@@ -1416,9 +1558,8 @@ function init(): void {
 
     // Instruction is only active when the toggle is on
     const instruction = instructionActive ? input.value.trim() : "";
-    // The API always needs a non-empty user message; use instruction → goal
-    const apiMessage = instruction
-      || `${activeGoal.name}: ${activeGoal.description}`;
+    // The API always needs a non-empty user message; use instruction → goal ranking keywords
+    const apiMessage = instruction || goalRankingText(activeGoal);
 
     // Show instruction bubble only when the user actually typed something
     if (instruction) addBubble("user", instruction);
@@ -1427,6 +1568,7 @@ function init(): void {
 
     const out = addBubble("assistant", "\u2026");
     generateBtn.disabled = true;
+    const saveContext = getSaveContext();
 
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), STREAM_TIMEOUT_MS);
@@ -1449,30 +1591,13 @@ function init(): void {
         controller.signal,
         (partial) => {
           const { visibleText } = parseThreadSummaryBlock(partial);
-          renderStructuredDrafts(out, visibleText || "\u2026");
+          renderStructuredDrafts(out, visibleText || "\u2026", saveContext);
           chat.scrollTop = chat.scrollHeight;
         },
       );
 
       const { visibleText, extractedSummary } = parseThreadSummaryBlock(acc);
-      const onSave = (draft: StructuredDraft): void => {
-        if (!draft.targetUser) return;
-        void saveTrackedUser({
-          id: crypto.randomUUID(),
-          savedAt: Date.now(),
-          username: draft.targetUser,
-          kind: draft.kind,
-          originalDraft: draft.text,
-          postTitle: thread?.title ?? "(untitled)",
-          postUrl: thread?.url ?? "",
-          subreddit: thread?.subreddit ?? "?",
-          threadSummary: threadSummary || fallbackThreadSummary(thread!),
-          goalName: activeGoal?.name ?? "",
-          goalDescription: activeGoal?.description ?? "",
-          followUpTurns: [],
-        });
-      };
-      const rendered = renderStructuredDrafts(out, visibleText || acc, onSave);
+      const rendered = renderStructuredDrafts(out, visibleText || acc, saveContext);
       const finalText = rendered.displayText || visibleText || acc;
 
       if (firstThreadCall) {

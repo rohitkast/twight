@@ -48,6 +48,50 @@ export interface GenerateRequest {
   history: ChatTurn[];
 }
 
+export interface GenerateGoalRequest {
+  name: string;
+  product: string;
+  intent: string;
+  avoid?: string;
+  /** When true, costs 1 draft. First generation is free. */
+  isRegenerate: boolean;
+}
+
+export interface GenerateGoalResponse {
+  playbook: string;
+  targetTypes: string[];
+  draftsRemaining: number;
+  charged: boolean;
+}
+
+/** Generate (or regenerate) an outreach playbook for a goal. */
+export async function generateGoalPlaybook(
+  body: GenerateGoalRequest,
+  signal?: AbortSignal,
+): Promise<GenerateGoalResponse> {
+  const res = await fetch(`${API_BASE_URL}/api/generate-goal`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify(body),
+    signal,
+  });
+
+  if (!res.ok) {
+    const payload = (await res.json().catch(() => ({}))) as {
+      error?: string;
+      code?: string;
+      draftsRemaining?: number;
+    };
+    throw new ApiError(
+      payload.error || `Goal playbook failed (${res.status})`,
+      res.status,
+      payload.code,
+    );
+  }
+
+  return (await res.json()) as GenerateGoalResponse;
+}
+
 /**
  * Stream hosted generation. Yields text deltas.
  * On completion, the generator return value is the new drafts balance (if present).

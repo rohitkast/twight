@@ -19,7 +19,29 @@ export interface RedditThread {
 export interface Goal {
   id: string;
   name: string;
+  /** List preview / legacy freeform. Prefer product + intent when present. */
   description: string;
+  /** What the user is offering (product or service). */
+  product?: string;
+  /** What they want drafts to achieve. */
+  intent?: string;
+  /** Optional: what to avoid in outreach. */
+  avoid?: string;
+  /** AI-generated outreach playbook — used for draft generation. */
+  playbook?: string;
+  /** Suggested ICP labels (chips). */
+  targetTypes?: string[];
+  playbookGeneratedAt?: number;
+}
+
+/** True when the goal has a usable AI playbook. */
+export function goalHasPlaybook(goal: Goal | null | undefined): boolean {
+  return !!goal?.playbook?.trim();
+}
+
+/** Goals without a playbook must be upgraded before use. */
+export function goalNeedsUpgrade(goal: Goal | null | undefined): boolean {
+  return !!goal && !goalHasPlaybook(goal);
 }
 
 export interface ExtractMeta {
