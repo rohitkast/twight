@@ -16,81 +16,89 @@
 
 <body class="goals-page">
   <header class="goals-header">
-    <div>
+    <div class="brand">
+      <span class="brand-title">Twight</span>
       <h1>Goals</h1>
-      <p class="sub">
-        Tell us what you offer and what you want from drafts. We'll build an outreach playbook
-        so replies target the right people.
-      </p>
     </div>
     <div class="goals-auth">
-      <span id="auth-status" class="text-sm text-base-content/60">Checking sign-in…</span>
+      <span id="auth-status" class="auth-status">Checking sign-in…</span>
       <button id="sign-in-btn" type="button" class="btn btn-primary btn-sm hidden">Sign in</button>
     </div>
   </header>
 
   <div id="goal-list" class="goal-list"></div>
 
-  <div class="divider"></div>
+  <hr class="goals-rule" />
 
-  <h2 id="form-title">Add a goal</h2>
+  <section class="goal-form" aria-labelledby="form-title">
+    <h2 id="form-title">Add a goal</h2>
 
-  <div id="upgrade-banner" class="alert alert-warning alert-soft hidden" role="alert">
-    <span>This goal needs a playbook before you can use it for drafts. Fill the fields and generate one.</span>
-  </div>
-
-  <label class="label" for="goal-name"><span class="label-text font-semibold">Name</span></label>
-  <input id="goal-name" type="text" class="input w-full" placeholder="e.g. Get Twight feedback" />
-
-  <label class="label" for="goal-product"><span class="label-text font-semibold">What are you offering?</span></label>
-  <textarea id="goal-product" class="textarea w-full" rows="3"
-    placeholder="e.g. Twight — a Chrome extension that drafts Reddit replies/DMs from thread context. Free, BYOK."></textarea>
-
-  <label class="label" for="goal-intent"><span class="label-text font-semibold">What do you want from drafts?</span></label>
-  <textarea id="goal-intent" class="textarea w-full" rows="3"
-    placeholder="e.g. Honest feedback from people who already do Reddit outreach; soft asks, not hard pitches."></textarea>
-
-  <label class="label" for="goal-avoid"><span class="label-text font-semibold">Anything to avoid? <span
-        class="font-normal text-base-content/50">(optional)</span></span></label>
-  <textarea id="goal-avoid" class="textarea w-full" rows="2"
-    placeholder="e.g. Don't DM milestone posts with no Reddit signal. Skip competing outreach tools."></textarea>
-
-  <section id="playbook-section" class="playbook-section">
-    <div class="playbook-head">
-      <h3>Outreach playbook</h3>
-      <p class="playbook-hint">Generated for you — locked. Regenerate costs 1 draft (first gen is free).</p>
+    <div id="upgrade-banner" class="alert alert-warning alert-soft hidden" role="alert">
+      <span>This goal needs a playbook before you can use it for drafts. Fill the fields and generate one.</span>
     </div>
 
-    <div id="playbook-empty" class="playbook-empty">
-      <p class="text-sm text-base-content/60">Playbook appears here after you generate it.</p>
+    <div class="field">
+      <label for="goal-name">Name</label>
+      <input id="goal-name" type="text" class="input" placeholder="e.g. Get Twight feedback" />
     </div>
 
-    <div id="playbook-loading" class="playbook-loading hidden">
-      <span class="loading loading-spinner loading-md"></span>
-      <span class="text-sm">Building your playbook…</span>
+    <div class="field">
+      <label for="goal-product">What are you offering?</label>
+      <textarea id="goal-product" class="textarea" rows="3"
+        placeholder="e.g. Reddit outreach tool"></textarea>
     </div>
 
-    <pre id="playbook-text" class="playbook-text hidden" aria-readonly="true"></pre>
+    <div class="field">
+      <label for="goal-intent">What do you want from drafts?</label>
+      <textarea id="goal-intent" class="textarea" rows="3"
+        placeholder="e.g. Feedback on the tool's design and features"></textarea>
+    </div>
 
-    <div id="targets-wrap" class="targets-wrap hidden">
-      <label class="label"><span class="label-text font-semibold">Target types</span></label>
-      <p class="text-xs text-base-content/50 mb-2">Who to look for in threads. Remove or add your own.</p>
-      <div id="target-chips" class="target-chips"></div>
-      <div class="chip-add join w-full mt-2">
-        <input id="chip-input" type="text" class="input input-sm join-item flex-1"
-          placeholder="Add a target type…" maxlength="60" />
-        <button id="chip-add-btn" type="button" class="btn btn-sm join-item">Add</button>
+    <div class="field">
+      <label for="goal-avoid">Anything to avoid? <span class="optional">optional</span></label>
+      <textarea id="goal-avoid" class="textarea" rows="2"
+        placeholder="e.e. Do not send DMs to posts with no Reddit signal."></textarea>
+    </div>
+
+    <section id="playbook-section" class="playbook-section">
+      <div class="playbook-head">
+        <h3>Outreach playbook</h3>
+        <p class="playbook-hint">Generated for you. First generation is free; regenerate costs 1 draft.</p>
       </div>
-    </div>
-  </section>
 
-  <div class="form-actions">
-    <button id="goal-generate" type="button" class="btn btn-primary">Generate playbook</button>
-    <button id="goal-regenerate" type="button" class="btn btn-ghost hidden">Regenerate (1 draft)</button>
-    <button id="goal-save" type="button" class="btn" disabled>Save goal</button>
-    <button id="goal-cancel" type="button" class="btn btn-ghost hidden">Cancel</button>
-  </div>
-  <p id="status" class="status" role="status"></p>
+      <div id="playbook-empty" class="playbook-empty">
+        <p>Playbook appears here after you generate it.</p>
+      </div>
+
+      <div id="playbook-loading" class="playbook-loading hidden">
+        <span class="loading loading-spinner loading-md"></span>
+        <span>Building your playbook…</span>
+      </div>
+
+      <pre id="playbook-text" class="playbook-text hidden" aria-readonly="true"></pre>
+
+      <div id="targets-wrap" class="targets-wrap hidden">
+        <div class="field-label-row">
+          <span class="field-label">Target types</span>
+          <span class="field-hint">Who to look for in threads</span>
+        </div>
+        <div id="target-chips" class="target-chips"></div>
+        <div class="chip-add join">
+          <input id="chip-input" type="text" class="input input-sm join-item"
+            placeholder="Add a target type…" maxlength="60" />
+          <button id="chip-add-btn" type="button" class="btn btn-sm join-item">Add</button>
+        </div>
+      </div>
+    </section>
+
+    <div class="form-actions">
+      <button id="goal-generate" type="button" class="btn btn-primary">Generate playbook</button>
+      <button id="goal-regenerate" type="button" class="btn btn-ghost hidden">Regenerate (1 draft)</button>
+      <button id="goal-save" type="button" class="btn btn-neutral" disabled>Save goal</button>
+      <button id="goal-cancel" type="button" class="btn btn-ghost hidden">Cancel</button>
+    </div>
+    <p id="status" class="status" role="status"></p>
+  </section>
 
   <script src="goals.js"></script>
 </body>

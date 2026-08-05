@@ -3,10 +3,16 @@ import type { RedditThread, Goal } from "./types";
 import { goalHasPlaybook } from "./types";
 
 /** Format goal section for system prompts — prefer playbook + chips over raw description. */
+const MAX_PLAYBOOK_CHARS = 2800;
+
 export function formatGoalSection(goal: Goal | null): string | null {
   if (!goal) return null;
   if (goalHasPlaybook(goal)) {
-    const parts = [`# Goal\n${goal.name}`, "", goal.playbook!.trim()];
+    let playbook = goal.playbook!.trim();
+    if (playbook.length > MAX_PLAYBOOK_CHARS) {
+      playbook = playbook.slice(0, MAX_PLAYBOOK_CHARS) + "…";
+    }
+    const parts = [`# Goal\n${goal.name}`, "", playbook];
     if (goal.targetTypes?.length) {
       parts.push(
         "",
@@ -108,13 +114,15 @@ Given a Reddit thread:
 - Never invent facts beyond what is provided.
 - Comments may be truncated for brevity. Never mention or allude to truncation, missing text, or incomplete comments in any draft.`;
 
-function appendOutputContract(parts: string[], requestThreadSummary: boolean): void {
+function appendOutputContract(parts: string[], requestThreadSummary: boolean, maxItems = 6): void {
+  const capped = Math.max(1, Math.min(6, maxItems));
   parts.push(
     "",
     "Output contract:",
     `Emit each draft in its own frame using ${"<ITEM>"}JSON${"</ITEM>"}.`,
     "JSON fields: kind (dm|reply|comment), targetUser (string or null), title, text, rationale.",
-    "Emit 1-6 items. No markdown code fences.",
+    `Emit 1-${capped} items (prefer fewer, complete frames over many truncated ones). No markdown code fences.`,
+    "Finish every ITEM frame — never leave JSON unclosed.",
   );
 
   if (requestThreadSummary) {
@@ -162,12 +170,13 @@ export function buildSystemPrompt(
   } = context;
 
   const goalSection = formatGoalSection(goal);
+  const maxItems = goalHasPlaybook(goal) ? 3 : 6;
 
   if (!thread && !summary.trim()) {
     const parts = [BASE_SYSTEM];
     if (goalSection) parts.push("", goalSection);
     parts.push('\nNo thread loaded. Ask the user to click "Load thread from page".');
-    appendOutputContract(parts, requestThreadSummary);
+    appendOutputContract(parts, requestThreadSummary, maxItems);
     return parts.join("\n");
   }
 
@@ -181,7 +190,7 @@ export function buildSystemPrompt(
       "",
       "Use only this summary as thread context. Do not ask for raw post/comments unless essential.",
     );
-    appendOutputContract(parts, requestThreadSummary);
+    appendOutputContract(parts, requestThreadSummary, maxItems);
     return parts.join("\n");
   }
 
@@ -189,7 +198,7 @@ export function buildSystemPrompt(
     const parts = [BASE_SYSTEM];
     if (goalSection) parts.push("", goalSection);
     parts.push("", "# Thread summary", truncate(summary.trim(), MAX_SUMMARY_CHARS));
-    appendOutputContract(parts, requestThreadSummary);
+    appendOutputContract(parts, requestThreadSummary, maxItems);
     return parts.join("\n");
   }
 
@@ -243,7 +252,7 @@ export function buildSystemPrompt(
     );
   }
 
-  appendOutputContract(parts, requestThreadSummary);
+  appendOutputContract(parts, requestThreadSummary, maxItems);
 
   return parts.join("\n");
 }
@@ -276,7 +285,7 @@ export function buildConversionSystemPrompt(
     "- Matches the tone of the original outreach and the subreddit culture",
     "- Never sounds like marketing and never mentions AI",
   );
-  appendOutputContract(parts, false);
+  appendOutputContract(parts, false, goalHasPlaybook(goal) ? 3 : 6);
   return parts.join("\n");
 }
 

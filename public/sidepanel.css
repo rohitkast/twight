@@ -448,6 +448,27 @@ body.rra-app {
   min-height: 42px;
 }
 
+.draft-incomplete {
+  padding: 12px 14px;
+  border-radius: var(--rra-radius-sm, 8px);
+  border: 1px solid var(--rra-border, #e8eaef);
+  background: var(--rra-surface, #f7f8fa);
+}
+
+.draft-incomplete-title {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--rra-fg, #141417);
+}
+
+.draft-incomplete-body {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--rra-muted, #6b7280);
+}
+
 .thinking-row {
   display: inline-flex;
   align-items: center;

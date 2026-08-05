@@ -85,7 +85,7 @@ module.exports = async function handler(req, res) {
     const model = genAI.getGenerativeModel({
       model: HOSTED_GEMINI_MODEL,
       systemInstruction: system,
-      generationConfig: { maxOutputTokens: 1400 },
+      generationConfig: { maxOutputTokens: 2800 },
     });
 
     const chat = model.startChat({ history: geminiHistory });

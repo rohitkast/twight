@@ -42,7 +42,7 @@ const CHAT_HISTORY_KEY = "chatHistoryByPost";
 const MAX_HISTORY_ITEMS = 100;
 const INCLUDE_COMMENTS_KEY = "includeCommentsInDrafts";
 const MODEL_PROVIDER_KEY = "modelProvider";
-const STREAM_TIMEOUT_MS = 30_000;
+const STREAM_TIMEOUT_MS = 90_000;
 const TRACKED_USERS_KEY = "trackedUsers";
 const TRACKED_USERS_WARN_THRESHOLD = 30;
 const TRACKED_USERS_MAX = 50;
@@ -267,6 +267,48 @@ async function getSavedConversationMap(): Promise<SavedConversationMap> {
 
 async function setSavedConversationMap(map: SavedConversationMap): Promise<void> {
   await chrome.storage.local.set({ [CHAT_HISTORY_KEY]: map });
+}
+
+function looksLikeDraftProtocolJunk(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  if (t.includes(ITEM_OPEN) || t.includes(ITEM_CLOSE)) return true;
+  if (/"kind"\s*:\s*"(dm|reply|comment)"/i.test(t)) return true;
+  return false;
+}
+
+const DRAFT_INCOMPLETE_MSG =
+  "Drafts didn’t finish generating (response was cut off). Hit **Generate** again.";
+
+/** Rewrite assistant turns that stored truncated ITEM/JSON junk as a clear message. */
+function sanitizeConversationTurns(turns: ConversationTurn[]): {
+  turns: ConversationTurn[];
+  changed: boolean;
+} {
+  let changed = false;
+  const cleaned = turns.map((t) => {
+    if (t.role !== "assistant") return t;
+    if (t.structuredDrafts && t.structuredDrafts.length > 0) return t;
+    if (!looksLikeDraftProtocolJunk(t.content || "")) return t;
+    changed = true;
+    return { role: "assistant" as const, content: DRAFT_INCOMPLETE_MSG };
+  });
+  return { turns: cleaned, changed };
+}
+
+async function migrateBrokenHistoryEntries(): Promise<void> {
+  const map = await getSavedConversationMap();
+  let touched = false;
+  for (const key of Object.keys(map)) {
+    const item = map[key];
+    if (!item?.turns?.length) continue;
+    const { turns, changed } = sanitizeConversationTurns(item.turns);
+    if (changed) {
+      map[key] = { ...item, turns };
+      touched = true;
+    }
+  }
+  if (touched) await setSavedConversationMap(map);
 }
 
 async function getTrackedUsers(): Promise<TrackedUser[]> {
@@ -584,32 +626,62 @@ function renderDraftFeed(
   bubble.appendChild(feed);
 }
 
+function renderDraftIncomplete(bubble: HTMLElement): void {
+  bubble.classList.remove("thinking");
+  bubble.classList.add("structured");
+  bubble.innerHTML =
+    `<div class="draft-incomplete">` +
+    `<p class="draft-incomplete-title">Drafts didn’t finish</p>` +
+    `<p class="draft-incomplete-body">Generation was cut off before usable cards came back — usually a length limit. Hit <strong>Generate</strong> again.</p>` +
+    `</div>`;
+}
+
 /**
  * Main entry: parses streaming text and renders it.
  * Returns structured data for history storage.
+ * Pass finalized=true when the stream is complete so we never leave an infinite
+ * "Generating drafts" spinner (truncated/malformed ITEM frames).
  */
 function renderStructuredDrafts(
   bubble: HTMLElement,
   sourceText: string,
   saveContext?: DraftSaveContext,
+  finalized = false,
 ): { displayText: string; hasStructuredDrafts: boolean; drafts: StructuredDraft[]; remainder: string } {
   const { drafts, remainder, hasPartialFrame } = parseStructuredDrafts(sourceText);
   const hasItemToken = sourceText.includes(ITEM_OPEN) || sourceText.includes(ITEM_CLOSE);
+  const protocolJunk = looksLikeDraftProtocolJunk(sourceText);
 
   if (drafts.length === 0) {
-    if (hasPartialFrame || hasItemToken || sourceText.trim() === "\u2026" || !sourceText.trim()) {
+    // While streaming: keep the thinking UI for empty / partial ITEM output.
+    if (!finalized && (hasPartialFrame || hasItemToken || protocolJunk || sourceText.trim() === "\u2026" || !sourceText.trim())) {
       renderThinkingState(bubble);
       return { displayText: "", hasStructuredDrafts: true, drafts: [], remainder: "" };
     }
-    bubble.classList.remove("structured");
+
+    // Stream finished with no usable drafts — never dump raw JSON into the UI.
+    if (finalized && (hasPartialFrame || hasItemToken || protocolJunk || !sourceText.trim() || sourceText.trim() === "\u2026")) {
+      renderDraftIncomplete(bubble);
+      return {
+        displayText: DRAFT_INCOMPLETE_MSG,
+        hasStructuredDrafts: false,
+        drafts: [],
+        remainder: "",
+      };
+    }
+
+    bubble.classList.remove("structured", "thinking");
     bubble.innerHTML = renderMarkdown(sourceText);
     wireCopyButton(bubble, sourceText);
     return { displayText: sourceText, hasStructuredDrafts: false, drafts: [], remainder: sourceText };
   }
 
   const partialStart = hasPartialFrame ? remainder.lastIndexOf(ITEM_OPEN) : -1;
-  const safeRemainder = hasPartialFrame && partialStart >= 0 ? remainder.slice(0, partialStart).trim() : remainder;
-  renderDraftFeed(bubble, drafts, safeRemainder, hasPartialFrame, saveContext);
+  // Drop incomplete trailing ITEM on finalize; keep "Generating more…" only while streaming.
+  const safeRemainder =
+    hasPartialFrame && partialStart >= 0 ? remainder.slice(0, partialStart).trim() : remainder;
+  const showPartial = hasPartialFrame && !finalized;
+  renderDraftFeed(bubble, drafts, safeRemainder, showPartial, saveContext);
   return {
     displayText: serializeDraftsForHistory(drafts, safeRemainder),
     hasStructuredDrafts: true,
@@ -697,6 +769,8 @@ function init(): void {
   let mode: "live" | "history-list" | "history-detail" | "chatlist-list" | "chatlist-detail" = "live";
   let includeComments = true;
   let modelProvider: "claude" | "gemini" = "claude";
+  /** Prevents double Generate and mode switches re-enabling the button mid-stream. */
+  let isGenerating = false;
   let instructionActive = false;
   let selectedHistoryPostKey: string | null = null;
   let historyDetailContext: {
@@ -992,7 +1066,8 @@ function init(): void {
       renderDraftFeed(el, turn.structuredDrafts, turn.structuredRemainder || "", false, saveContext);
     } else {
       // Fallback: re-parse content (handles old saved chats without structuredDrafts)
-      renderStructuredDrafts(el, turn.content || "", saveContext);
+      // finalized=true so truncated ITEM junk never shows an infinite spinner
+      renderStructuredDrafts(el, turn.content || "", saveContext, true);
     }
 
     chat.appendChild(el);
@@ -1040,12 +1115,12 @@ function init(): void {
       input.classList.remove("hidden");
       input.placeholder = "What did they reply? Paste their message or describe\u2026";
       generateBtn.textContent = "Send";
-      generateBtn.disabled = false;
+      generateBtn.disabled = isGenerating;
     } else {
       input.classList.toggle("hidden", !instructionActive);
       input.placeholder = "e.g. DMs only \u00B7 focus on u/someuser \u00B7 skip OP";
       generateBtn.textContent = "Generate";
-      generateBtn.disabled = !isLive;
+      generateBtn.disabled = !isLive || isGenerating;
     }
 
     if (isLive) {
@@ -1053,7 +1128,8 @@ function init(): void {
       if (history.length === 0) {
         chat.innerHTML = "";
         if (!hasLoaded) renderOnboarding();
-      } else {
+      } else if (!isGenerating) {
+        // Don't wipe the in-flight assistant bubble while a stream is running.
         void renderTranscript(history);
       }
     }
@@ -1134,8 +1210,18 @@ function init(): void {
         };
         conversationSummary = item.summary || "";
         threadSummary = item.threadSummary || "";
+        const { turns, changed } = sanitizeConversationTurns((item.turns || []) as ConversationTurn[]);
+        if (changed) {
+          void (async () => {
+            const map = await getSavedConversationMap();
+            if (map[item.postKey]) {
+              map[item.postKey] = { ...map[item.postKey], turns };
+              await setSavedConversationMap(map);
+            }
+          })();
+        }
         setMode("history-detail");
-        void renderTranscript((item.turns || []) as ConversationTurn[]);
+        void renderTranscript(turns);
       });
 
       const ICON_TRASH = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" width="14" height="14"><path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" /></svg>`;
@@ -1310,7 +1396,7 @@ function init(): void {
       if (turn.role === "user") {
         el.textContent = turn.content;
       } else {
-        renderStructuredDrafts(el, turn.content || "");
+        renderStructuredDrafts(el, turn.content || "", undefined, true);
       }
       chat.appendChild(el);
     }
@@ -1321,7 +1407,7 @@ function init(): void {
 
   async function sendFollowUp(): Promise<void> {
     if (!currentTrackedUser) return;
-    if (generateBtn.disabled) return;
+    if (generateBtn.disabled || isGenerating) return;
     if (!requireSignedIn()) return;
     if (!requireDrafts()) return;
     const userMsg = input.value.trim();
@@ -1355,6 +1441,7 @@ function init(): void {
     const userTurn: ChatTurn = { role: "user", content: userMsg };
     currentTrackedUser.followUpTurns.push(userTurn);
     const out = addBubble("assistant", "\u2026");
+    isGenerating = true;
     generateBtn.disabled = true;
 
     const controller = new AbortController();
@@ -1371,7 +1458,7 @@ function init(): void {
       );
 
       const { text: acc } = await stream;
-      const rendered = renderStructuredDrafts(out, acc || "");
+      const rendered = renderStructuredDrafts(out, acc || "", undefined, true);
       const finalText = rendered.displayText || acc;
       currentTrackedUser.followUpTurns.push({ role: "assistant", content: finalText });
 
@@ -1391,6 +1478,7 @@ function init(): void {
       }
     } finally {
       window.clearTimeout(timeoutId);
+      isGenerating = false;
       generateBtn.disabled = false;
     }
   }
@@ -1538,7 +1626,7 @@ function init(): void {
   });
 
   async function send(): Promise<void> {
-    if (generateBtn.disabled) return;
+    if (generateBtn.disabled || isGenerating) return;
     if (!requireSignedIn()) return;
     if (!requireDrafts()) return;
 
@@ -1556,6 +1644,10 @@ function init(): void {
       return;
     }
 
+    // Lock immediately so a second click can't start another stream.
+    isGenerating = true;
+    generateBtn.disabled = true;
+
     // Instruction is only active when the toggle is on
     const instruction = instructionActive ? input.value.trim() : "";
     // The API always needs a non-empty user message; use instruction → goal ranking keywords
@@ -1567,7 +1659,6 @@ function init(): void {
     history.push({ role: "user", content: apiMessage, hidden: !instruction });
 
     const out = addBubble("assistant", "\u2026");
-    generateBtn.disabled = true;
     const saveContext = getSaveContext();
 
     const controller = new AbortController();
@@ -1591,14 +1682,20 @@ function init(): void {
         controller.signal,
         (partial) => {
           const { visibleText } = parseThreadSummaryBlock(partial);
-          renderStructuredDrafts(out, visibleText || "\u2026", saveContext);
+          renderStructuredDrafts(out, visibleText || "\u2026", saveContext, false);
           chat.scrollTop = chat.scrollHeight;
         },
       );
 
       const { visibleText, extractedSummary } = parseThreadSummaryBlock(acc);
-      const rendered = renderStructuredDrafts(out, visibleText || acc, saveContext);
-      const finalText = rendered.displayText || visibleText || acc;
+      const rendered = renderStructuredDrafts(out, visibleText || acc, saveContext, true);
+      // Never persist raw truncated protocol JSON into history
+      const finalText =
+        rendered.drafts.length > 0
+          ? rendered.displayText || visibleText || acc
+          : looksLikeDraftProtocolJunk(visibleText || acc) || !rendered.displayText
+            ? DRAFT_INCOMPLETE_MSG
+            : rendered.displayText || visibleText || acc;
 
       if (firstThreadCall) {
         threadSummary = truncate(extractedSummary || fallbackThreadSummary(thread), MAX_SUMMARY_CHARS);
@@ -1609,7 +1706,7 @@ function init(): void {
         role: "assistant",
         content: finalText,
         structuredDrafts: rendered.drafts.length ? rendered.drafts : undefined,
-        structuredRemainder: rendered.remainder || undefined,
+        structuredRemainder: rendered.drafts.length ? rendered.remainder || undefined : undefined,
       });
 
       truncateConversationSummary(apiMessage, finalText);
@@ -1632,7 +1729,8 @@ function init(): void {
       }
     } finally {
       window.clearTimeout(timeoutId);
-      generateBtn.disabled = false;
+      isGenerating = false;
+      generateBtn.disabled = mode !== "live" && mode !== "chatlist-detail";
     }
   }
 
@@ -1707,7 +1805,7 @@ function init(): void {
   void loadIncludeCommentsPreference();
   void loadModelPreference();
   void loadGoals();
-  void renderHistoryList();
+  void migrateBrokenHistoryEntries().then(() => renderHistoryList());
   setMode("live");
 }
 
