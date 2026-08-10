@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="description" content="Buy Twight drafts — 50 drafts for $5. Sign in to the extension with the same Google email." />
+  <meta name="description" content="Buy Twight drafts — 50 drafts for $5. Sign in with Google to link your purchase." />
   <title>Pricing · Twight</title>
   <link rel="icon" href="/marketing/assets/icon-128.png" type="image/png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -49,11 +49,21 @@
           </div>
           <div style="font-size: 1.75rem; font-weight: 700;">$5</div>
         </div>
-        <a class="lp-btn-primary" style="display: inline-flex; margin-top: 20px; width: 100%; justify-content: center;"
-          href="https://buy.polar.sh/polar_cl_qIeUmJLUltXdBR8BFKvFYVgSMCLUSXxgDSbNn1s6sB6"
-          rel="noopener noreferrer">Buy 50 drafts</a>
+
+        <p id="pricing-account" class="hidden" style="margin: 16px 0 0; font-size: 0.9rem; color: var(--rra-muted);"></p>
+        <p id="pricing-status" style="margin: 12px 0 0; font-size: 0.85rem; color: var(--rra-error, #c2410c); min-height: 1.25em;"></p>
+
+        <button id="pricing-sign-in" type="button" class="lp-btn-primary"
+          style="display: inline-flex; margin-top: 12px; width: 100%; justify-content: center; border: none; cursor: pointer;">
+          Sign in with Google
+        </button>
+        <button id="pricing-buy" type="button" class="lp-btn-primary hidden"
+          style="display: inline-flex; margin-top: 12px; width: 100%; justify-content: center; border: none; cursor: pointer;">
+          Buy 50 drafts — $5
+        </button>
+
         <p style="margin: 14px 0 0; font-size: 0.85rem; color: var(--rra-muted);">
-          Use the <strong>same Google email</strong> you signed in with in the Twight extension, or drafts won't be credited to your account.
+          Sign in first so your purchase is linked to your Twight account. Your Google email is prefilled at checkout.
         </p>
       </div>
 
@@ -70,6 +80,8 @@
       <p><a href="https://rohitkast.github.io/twight-privacy-policy/">Privacy policy</a></p>
     </div>
   </footer>
+
+  <script type="module" src="/marketing/pricing.js"></script>
 </body>
 
 </html>

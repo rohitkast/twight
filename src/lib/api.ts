@@ -18,6 +18,10 @@ export interface MeResponse {
   draftsRemaining: number;
 }
 
+export interface CheckoutResponse {
+  url: string;
+}
+
 /** Appended by /api/generate after a successful stream + draft deduction. */
 export const DRAFTS_STREAM_FOOTER_RE = /<!--__TWIGHT_DRAFTS__:(\d+)-->$/;
 const FOOTER_HOLD_CHARS = 40;
@@ -41,6 +45,19 @@ export async function fetchMe(): Promise<MeResponse> {
     throw new ApiError(body.error || `Request failed (${res.status})`, res.status, body.code);
   }
   return (await res.json()) as MeResponse;
+}
+
+/** Create a Polar checkout session tied to the signed-in user. */
+export async function createCheckout(): Promise<CheckoutResponse> {
+  const res = await fetch(`${API_BASE_URL}/api/checkout`, {
+    method: "POST",
+    headers: await authHeaders(),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string; code?: string };
+    throw new ApiError(body.error || `Checkout failed (${res.status})`, res.status, body.code);
+  }
+  return (await res.json()) as CheckoutResponse;
 }
 
 export interface GenerateRequest {

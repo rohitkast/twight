@@ -85,7 +85,8 @@ $$;
 create or replace function public.add_drafts_from_order(
   p_order_id text,
   p_email text,
-  p_drafts integer
+  p_drafts integer,
+  p_user_id uuid default null
 )
 returns integer
 language plpgsql
@@ -105,22 +106,44 @@ begin
     return coalesce(new_balance, 0);
   end if;
 
-  select id into target_user
-  from public.profiles
-  where lower(email) = lower(p_email)
-  limit 1;
+  if p_user_id is not null then
+    select id into target_user
+    from public.profiles
+    where id = p_user_id
+    limit 1;
+
+    if target_user is null then
+      select id into target_user
+      from auth.users
+      where id = p_user_id
+      limit 1;
+
+      if target_user is not null then
+        insert into public.profiles (id, email, drafts_balance)
+        values (target_user, p_email, 0)
+        on conflict (id) do nothing;
+      end if;
+    end if;
+  end if;
 
   if target_user is null then
-    -- Try auth.users in case profile trigger lagged
     select id into target_user
-    from auth.users
+    from public.profiles
     where lower(email) = lower(p_email)
     limit 1;
 
-    if target_user is not null then
-      insert into public.profiles (id, email, drafts_balance)
-      values (target_user, p_email, 0)
-      on conflict (id) do nothing;
+    if target_user is null then
+      -- Try auth.users in case profile trigger lagged
+      select id into target_user
+      from auth.users
+      where lower(email) = lower(p_email)
+      limit 1;
+
+      if target_user is not null then
+        insert into public.profiles (id, email, drafts_balance)
+        values (target_user, p_email, 0)
+        on conflict (id) do nothing;
+      end if;
     end if;
   end if;
 

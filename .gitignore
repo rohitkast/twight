@@ -5,3 +5,5 @@ vercel-static/
 .env
 .env.*
 !.env.example
+.vercel
+.env*

@@ -50,6 +50,20 @@ module.exports = async function handler(req, res) {
       (typeof customer.email === "string" && customer.email) ||
       (typeof order.customer_email === "string" && order.customer_email) ||
       null;
+    const metadata = order.metadata && typeof order.metadata === "object" ? order.metadata : {};
+    const userIdRaw =
+      metadata.supabase_user_id ||
+      metadata.supabaseUserId ||
+      customer.external_id ||
+      customer.externalId ||
+      order.external_customer_id ||
+      order.externalCustomerId ||
+      null;
+    const userId =
+      typeof userIdRaw === "string" &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userIdRaw)
+        ? userIdRaw
+        : null;
     const product = order.product || {};
     const productId =
       (typeof product.id === "string" && product.id) ||
@@ -73,6 +87,7 @@ module.exports = async function handler(req, res) {
       p_order_id: orderId,
       p_email: email,
       p_drafts: DRAFTS_PER_PACK,
+      p_user_id: userId,
     });
 
     if (error) {

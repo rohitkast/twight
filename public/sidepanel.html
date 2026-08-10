@@ -21,11 +21,17 @@
     </div>
     <div class="header-actions">
       <button id="drafts-badge" type="button" class="drafts-meter hidden"
-        title="Draft balance — click to buy more" aria-label="Draft balance">
-        <span class="drafts-meter-count" id="drafts-meter-count">—</span>
-        <span class="drafts-meter-track" aria-hidden="true">
-          <span class="drafts-meter-fill" id="drafts-meter-fill"></span>
-          <span class="drafts-meter-ticks" aria-hidden="true"></span>
+        title="Draft balance" aria-label="Draft balance">
+        <span class="drafts-meter-balance" id="drafts-meter-balance">
+          <span class="drafts-meter-count" id="drafts-meter-count">—</span>
+          <span class="drafts-meter-track" aria-hidden="true">
+            <span class="drafts-meter-fill" id="drafts-meter-fill"></span>
+            <span class="drafts-meter-ticks" aria-hidden="true"></span>
+          </span>
+        </span>
+        <span class="drafts-meter-buy hidden" id="drafts-meter-buy" aria-hidden="true">
+          <span class="drafts-meter-warn" aria-hidden="true">!</span>
+          <span class="drafts-meter-buy-label">Buy drafts</span>
         </span>
       </button>
       <button id="sign-in-btn" type="button" class="btn btn-primary btn-xs">Sign in</button>
@@ -115,8 +121,7 @@
   <dialog id="drafts-modal" class="modal">
     <div class="modal-box">
       <h3 class="text-lg font-bold">Out of drafts</h3>
-      <p class="py-3 text-sm opacity-80">Buy more drafts to keep generating. Use the same Google email you signed in
-        with.</p>
+      <p class="py-3 text-sm opacity-80">Buy more drafts to keep generating. Your Google email will be prefilled at checkout.</p>
       <div class="modal-action">
         <form method="dialog"><button class="btn btn-ghost btn-sm">Cancel</button></form>
         <button id="drafts-modal-buy" type="button" class="btn btn-primary btn-sm">Buy drafts</button>

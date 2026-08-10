@@ -41,6 +41,11 @@ h2 {
   cursor: pointer;
 }
 
+.btn:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
 .btn.primary {
   background: #ff4500;
   color: #fff;

@@ -1,3 +1,6 @@
+const { loadLocalEnv } = require("./load-env");
+loadLocalEnv();
+
 const { createClient } = require("@supabase/supabase-js");
 
 function getAdminClient() {

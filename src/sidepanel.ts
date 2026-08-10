@@ -1,7 +1,7 @@
 import { buildSystemPrompt, buildConversionSystemPrompt, goalRankingText, type ChatTurn } from "./lib/claude";
-import { ApiError, fetchMe, streamGenerate } from "./lib/api";
+import { ApiError, createCheckout, fetchMe, streamGenerate } from "./lib/api";
 import { getCurrentUser, signInWithGoogle } from "./lib/auth";
-import { BYOK_ENABLED, FREE_DRAFTS_ON_SIGNUP, PRICING_URL } from "./lib/config";
+import { BYOK_ENABLED, FREE_DRAFTS_ON_SIGNUP } from "./lib/config";
 import type { RedditThread, ExtractResponse, Goal, ScrollToUserResponse } from "./lib/types";
 import { goalHasPlaybook, goalNeedsUpgrade } from "./lib/types";
 import { marked } from "marked";
@@ -786,8 +786,30 @@ function init(): void {
   let draftsBarMax = FREE_DRAFTS_ON_SIGNUP;
   let signedIn = false;
 
-  function openPricing(): void {
-    chrome.tabs.create({ url: PRICING_URL });
+  async function startCheckout(): Promise<void> {
+    if (!requireSignedIn()) return;
+    const buyDefault = draftsModalBuy.textContent || "Buy drafts";
+    try {
+      draftsBadge.disabled = true;
+      draftsModalBuy.disabled = true;
+      draftsModalBuy.textContent = "Opening checkout…";
+      draftsBadge.classList.add("loading");
+      showToast("Preparing checkout…", 8000);
+      const { url } = await createCheckout();
+      chrome.tabs.create({ url });
+      showToast("Checkout opened in a new tab");
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) {
+        authModal.showModal();
+        return;
+      }
+      showToast(e instanceof Error ? e.message : "Could not start checkout");
+    } finally {
+      draftsBadge.disabled = false;
+      draftsModalBuy.disabled = false;
+      draftsModalBuy.textContent = buyDefault;
+      draftsBadge.classList.remove("loading");
+    }
   }
 
   async function refreshTrackedUsersCache(): Promise<void> {
@@ -908,7 +930,7 @@ function init(): void {
     signInBtn.classList.toggle("hidden", signedIn);
     draftsBadge.classList.toggle("hidden", !signedIn);
 
-    draftsBadge.classList.remove("low", "empty", "loading");
+    draftsBadge.classList.remove("low", "empty", "loading", "clickable");
 
     if (signedIn && draftsRemaining !== null) {
       const max = Math.max(draftsBarMax, draftsRemaining, 1);
@@ -917,16 +939,24 @@ function init(): void {
       draftsMeterFill.style.width = `${pct}%`;
       draftsBadge.setAttribute("aria-valuenow", String(draftsRemaining));
       draftsBadge.setAttribute("aria-valuemax", String(max));
-      draftsBadge.title = `${draftsRemaining} of ${max} drafts — click to buy more`;
-      if (draftsRemaining <= 0) draftsBadge.classList.add("empty");
-      else if (draftsRemaining <= 2) draftsBadge.classList.add("low");
+
+      if (draftsRemaining <= 0) {
+        draftsBadge.classList.add("empty", "clickable");
+        draftsBadge.title = "No drafts left — click to buy more";
+        draftsBadge.setAttribute("aria-label", "No drafts left. Buy drafts");
+      } else {
+        draftsBadge.title = `${draftsRemaining} of ${max} drafts remaining`;
+        draftsBadge.setAttribute("aria-label", `${draftsRemaining} drafts remaining`);
+        if (draftsRemaining <= 2) draftsBadge.classList.add("low");
+      }
     } else if (signedIn) {
       draftsMeterCount.textContent = "…";
       draftsMeterFill.style.width = "0%";
-      draftsBadge.classList.add("loading");
+      draftsBadge.classList.add("loading", "clickable");
       draftsBadge.removeAttribute("aria-valuenow");
       draftsBadge.removeAttribute("aria-valuemax");
       draftsBadge.title = "Could not load balance — click to retry";
+      draftsBadge.setAttribute("aria-label", "Draft balance unavailable. Click to retry");
     }
   }
 
@@ -988,16 +1018,20 @@ function init(): void {
   signInBtn.addEventListener("click", () => { void handleSignIn(); });
   authModalGoogle.addEventListener("click", () => { void handleSignIn(); });
   draftsBadge.addEventListener("click", () => {
-    // If balance failed to load, retry first; otherwise open pricing
-    if (signedIn && draftsRemaining === null) {
+    if (!signedIn) return;
+    // Balance failed to load — retry
+    if (draftsRemaining === null) {
       void refreshAccount(true);
       return;
     }
-    openPricing();
+    // Only open checkout when out of drafts
+    if (draftsRemaining <= 0) {
+      void startCheckout();
+    }
   });
   draftsModalBuy.addEventListener("click", () => {
     draftsModal.close();
-    openPricing();
+    void startCheckout();
   });
 
   // Refresh balance when side panel becomes visible again (e.g. after purchase)

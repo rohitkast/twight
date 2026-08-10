@@ -72,15 +72,24 @@ body.rra-app {
   border: 1px solid var(--rra-border);
   border-radius: 999px;
   background: var(--rra-surface);
-  cursor: pointer;
+  cursor: default;
   font: inherit;
   line-height: 1;
   transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
-  max-width: 5.75rem;
+  max-width: 7.5rem;
   flex-shrink: 0;
 }
 
-.drafts-meter:hover {
+.drafts-meter:not(.empty):not(.loading):not(.clickable) {
+  pointer-events: none;
+}
+
+.drafts-meter.clickable {
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.drafts-meter.clickable:hover {
   border-color: var(--rra-accent-ring);
   background: var(--rra-accent-soft);
   box-shadow: var(--rra-shadow-xs);
@@ -89,6 +98,12 @@ body.rra-app {
 .drafts-meter:focus-visible {
   outline: 2px solid var(--rra-accent-ring);
   outline-offset: 2px;
+}
+
+.drafts-meter-balance {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
 }
 
 .drafts-meter-count {
@@ -138,13 +153,51 @@ body.rra-app {
   box-shadow: 0 0 6px rgba(245, 158, 11, 0.35);
 }
 
-.drafts-meter.empty .drafts-meter-fill {
-  width: 0 !important;
-  box-shadow: none;
+.drafts-meter-buy {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
 }
 
-.drafts-meter.empty .drafts-meter-count {
-  color: #b45309;
+.drafts-meter-warn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: #b45309;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.drafts-meter-buy-label {
+  font-size: 11px;
+  font-weight: 700;
+  color: #9a3412;
+}
+
+.drafts-meter.empty {
+  max-width: none;
+  border-color: #fcd34d;
+  background: #fffbeb;
+  padding: 5px 10px 5px 8px;
+}
+
+.drafts-meter.empty .drafts-meter-balance {
+  display: none;
+}
+
+.drafts-meter.empty .drafts-meter-buy {
+  display: inline-flex;
+}
+
+.drafts-meter:not(.empty) .drafts-meter-buy {
+  display: none;
 }
 
 .drafts-meter.loading .drafts-meter-fill {
