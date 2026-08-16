@@ -14,6 +14,10 @@
       "destination": "/marketing/pricing.html"
     },
     {
+      "source": "/tips",
+      "destination": "/marketing/tips.html"
+    },
+    {
       "source": "/success",
       "destination": "/marketing/success.html"
     }

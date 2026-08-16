@@ -19,8 +19,9 @@ The playbook is injected into the drafting model as the user's Goal. It must be 
 4) Negative ICP — who to skip (milestone OPs with no relevant channel signal, competitors building adjacent tools, people whose growth story is clearly another channel with no Reddit/outreach mention).
 5) Channel rules — when to use public comment vs DM; on celebration/milestone posts default to comment unless strong fit.
 6) Don't invent — never assume they use Reddit, need the product, or share the user's channel unless evidenced in the thread.
-7) CTA style — help first, pitch second; one specific soft ask; forbid vague "thoughts if you ever try it" closers.
-8) Optional: 1–2 example angle lines (not full messages) that fit their goal.
+7) First-touch style — conversation starter only: reference something specific they said, show you understand their problem (not your solution), ask ONE question. Forbid product name, pitch, "I help X do Y", soft CTAs, scheduling asks, and links in message 1. Pitch/product intro only after they reply or explicitly ask.
+8) Voice — drafts are first person as the human sender; never third-person founder names; never AI narration.
+9) Optional: 1–2 example opener angles (not full messages) that fit their goal — question-led, no pitch.
 
 targetTypes: 2–3 short chip labels (3–8 words each) naming who to seek in threads. Make them specific and actionable (not "indie hackers" alone — e.g. "Indie hackers doing Reddit outreach").
 

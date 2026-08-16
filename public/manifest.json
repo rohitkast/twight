@@ -15,7 +15,6 @@
   ],
   "host_permissions": [
     "https://*.reddit.com/*",
-    "http://localhost:3000/*",
     "https://twight.vercel.app/*",
     "https://rcbnajyufootjbpncwxz.supabase.co/*"
   ],

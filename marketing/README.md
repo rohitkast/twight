@@ -11,7 +11,7 @@ Static marketing site for the Chrome extension.
 5. **Build command:** leave blank — `vercel.json` runs `npm run build:vercel`, which copies `marketing/` and `public/` into `vercel-static/`.
 6. **Install command:** leave blank (optional).
 
-`vercel.json` rewrites `/` → `/marketing/index.html`.
+`vercel.json` rewrites `/` → `/marketing/index.html`, `/tips` → `/marketing/tips.html`, `/pricing` → `/marketing/pricing.html`.
 
 Styles and assets use absolute paths:
 
