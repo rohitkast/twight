@@ -1,107 +1,20 @@
-import Anthropic from "@anthropic-ai/sdk";
-import type { RedditThread, Goal } from "./types";
-import { goalHasPlaybook } from "./types";
+/**
+ * Server-owned draft prompts. Extension sends thread/goal data only;
+ * BASE_SYSTEM lives here so prompt changes deploy without a Chrome update.
+ */
 
-/** Format goal section for system prompts — prefer playbook + chips over raw description. */
 const MAX_PLAYBOOK_CHARS = 2800;
-
-export function formatGoalSection(goal: Goal | null): string | null {
-  if (!goal) return null;
-  if (goalHasPlaybook(goal)) {
-    let playbook = goal.playbook!.trim();
-    if (playbook.length > MAX_PLAYBOOK_CHARS) {
-      playbook = playbook.slice(0, MAX_PLAYBOOK_CHARS) + "…";
-    }
-    const parts = [`# Goal\n${goal.name}`, "", playbook];
-    if (goal.targetTypes?.length) {
-      parts.push(
-        "",
-        "# Target types (prefer these; skip weak fits)",
-        ...goal.targetTypes.map((t) => `- ${t}`),
-      );
-    }
-    return parts.join("\n");
-  }
-  return `# Goal\n${goal.name}: ${goal.description}`;
-}
-
-/** Keywords for comment ranking when the user has no custom instruction. */
-export function goalRankingText(goal: Goal): string {
-  const bits = [
-    goal.name,
-    goal.product,
-    goal.intent,
-    ...(goal.targetTypes ?? []),
-    !goal.product && !goal.intent ? goal.description : "",
-  ].filter((s) => !!s?.trim());
-  return bits.join(" — ");
-}
-
-export const MODEL = "claude-sonnet-4-5";
-
-export interface ChatTurn {
-  role: "user" | "assistant";
-  content: string;
-}
-
-export interface PromptContext {
-  summary?: string;
-  includeRawThread?: boolean;
-  requestThreadSummary?: boolean;
-  includeComments?: boolean;
-}
-
-export function getClient(apiKey: string): Anthropic {
-  // dangerouslyAllowBrowser is required to call the API from a browser/extension
-  // context. Safe here because the key is the user's own, stored only in this browser.
-  return new Anthropic({ apiKey, dangerouslyAllowBrowser: true });
-}
-
-// Input token budget: truncate aggressively to keep prompt small across turns.
 const MAX_COMMENT_CHARS = 300;
 const MAX_COMMENTS = 16;
-const MAX_HISTORY_TURNS = 6; // 3 exchanges kept in each API call
 const MAX_SUMMARY_CHARS = 1200;
 
 const STOP_WORDS = new Set([
-  "the",
-  "and",
-  "for",
-  "that",
-  "with",
-  "this",
-  "from",
-  "have",
-  "what",
-  "your",
-  "just",
-  "they",
-  "them",
-  "into",
-  "about",
-  "would",
-  "there",
-  "could",
-  "should",
-  "where",
-  "when",
-  "which",
-  "also",
-  "been",
-  "were",
-  "will",
-  "some",
-  "than",
-  "then",
-  "their",
-  "need",
-  "want",
-  "like",
-  "make",
-  "help",
+  "the", "and", "for", "that", "with", "this", "from", "have", "what", "your",
+  "just", "they", "them", "into", "about", "would", "there", "could", "should",
+  "where", "when", "which", "also", "been", "were", "will", "some", "than",
+  "then", "their", "need", "want", "like", "make", "help",
 ]);
 
-/** @deprecated Hosted generation uses api/_lib/prompts.js. Keep in sync only if BYOK is re-enabled. */
 const BASE_SYSTEM = `You draft Reddit replies, comments, and DMs that the human user will send themselves.
 
 Voice (critical):
@@ -135,12 +48,38 @@ Other:
 - Never invent facts beyond what is provided.
 - Comments may be truncated for brevity. Never mention or allude to truncation, missing text, or incomplete comments in any draft.`;
 
-function appendOutputContract(parts: string[], requestThreadSummary: boolean, maxItems = 6): void {
+function goalHasPlaybook(goal) {
+  return !!(goal && typeof goal.playbook === "string" && goal.playbook.trim());
+}
+
+function formatGoalSection(goal) {
+  if (!goal) return null;
+  if (goalHasPlaybook(goal)) {
+    let playbook = String(goal.playbook || "").trim();
+    if (playbook.length > MAX_PLAYBOOK_CHARS) {
+      playbook = playbook.slice(0, MAX_PLAYBOOK_CHARS) + "…";
+    }
+    const parts = [`# Goal\n${goal.name || "Goal"}`, "", playbook];
+    if (Array.isArray(goal.targetTypes) && goal.targetTypes.length) {
+      parts.push(
+        "",
+        "# Target types (prefer these; skip weak fits)",
+        ...goal.targetTypes.filter((t) => typeof t === "string" && t.trim()).map((t) => `- ${t}`),
+      );
+    }
+    return parts.join("\n");
+  }
+  const name = goal.name || "Goal";
+  const description = goal.description || "";
+  return `# Goal\n${name}: ${description}`;
+}
+
+function appendOutputContract(parts, requestThreadSummary, maxItems = 6) {
   const capped = Math.max(1, Math.min(6, maxItems));
   parts.push(
     "",
     "Output contract:",
-    `Emit each draft in its own frame using ${"<ITEM>"}JSON${"</ITEM>"}.`,
+    "Emit each draft in its own frame using <ITEM>JSON</ITEM>.",
     "JSON fields: kind (dm|reply|comment), targetUser (string or null), title, text, rationale.",
     `Emit 1-${capped} items (prefer fewer, complete frames over many truncated ones). No markdown code fences.`,
     "Finish every ITEM frame — never leave JSON unclosed.",
@@ -158,16 +97,19 @@ function appendOutputContract(parts: string[], requestThreadSummary: boolean, ma
   }
 }
 
-function truncate(s: string, max: number): string {
-  return s.length > max ? s.slice(0, max) + "…" : s;
+function truncate(s, max) {
+  const str = String(s || "");
+  return str.length > max ? str.slice(0, max) + "…" : str;
 }
 
-function keywordSet(text: string): Set<string> {
-  const words = (text.toLowerCase().match(/[a-z0-9]{3,}/g) ?? []).filter((w) => !STOP_WORDS.has(w));
+function keywordSet(text) {
+  const words = (String(text || "").toLowerCase().match(/[a-z0-9]{3,}/g) || []).filter(
+    (w) => !STOP_WORDS.has(w),
+  );
   return new Set(words);
 }
 
-function scoreCommentForQuery(body: string, queryWords: Set<string>): number {
+function scoreCommentForQuery(body, queryWords) {
   if (!queryWords.size) return 0;
   const bodyWords = keywordSet(body);
   let overlap = 0;
@@ -177,23 +119,52 @@ function scoreCommentForQuery(body: string, queryWords: Set<string>): number {
   return overlap;
 }
 
-export function buildSystemPrompt(
-  thread: RedditThread | null,
-  goal: Goal | null = null,
-  latestUserMessage = "",
-  context: PromptContext = {},
-): string {
+function sanitizeGoal(goal) {
+  if (!goal || typeof goal !== "object") return null;
+  return {
+    id: typeof goal.id === "string" ? goal.id.slice(0, 80) : "",
+    name: typeof goal.name === "string" ? goal.name.slice(0, 200) : "Goal",
+    description: typeof goal.description === "string" ? goal.description.slice(0, 2000) : "",
+    product: typeof goal.product === "string" ? goal.product.slice(0, 2000) : undefined,
+    intent: typeof goal.intent === "string" ? goal.intent.slice(0, 2000) : undefined,
+    avoid: typeof goal.avoid === "string" ? goal.avoid.slice(0, 2000) : undefined,
+    playbook: typeof goal.playbook === "string" ? goal.playbook.slice(0, MAX_PLAYBOOK_CHARS + 50) : undefined,
+    targetTypes: Array.isArray(goal.targetTypes)
+      ? goal.targetTypes.filter((t) => typeof t === "string").map((t) => t.slice(0, 80)).slice(0, 8)
+      : undefined,
+  };
+}
+
+function sanitizeThread(thread) {
+  if (!thread || typeof thread !== "object") return null;
+  const comments = Array.isArray(thread.comments) ? thread.comments : [];
+  return {
+    url: typeof thread.url === "string" ? thread.url.slice(0, 500) : "",
+    subreddit: typeof thread.subreddit === "string" ? thread.subreddit.slice(0, 120) : "",
+    title: typeof thread.title === "string" ? thread.title.slice(0, 500) : "",
+    author: typeof thread.author === "string" ? thread.author.slice(0, 120) : "",
+    body: typeof thread.body === "string" ? thread.body.slice(0, 8000) : "",
+    comments: comments.slice(0, 80).map((c) => ({
+      author: typeof c?.author === "string" ? c.author.slice(0, 120) : "unknown",
+      body: typeof c?.body === "string" ? c.body.slice(0, 2000) : "",
+      depth: typeof c?.depth === "number" ? Math.min(Math.max(0, c.depth), 20) : 0,
+      score: typeof c?.score === "string" ? c.score.slice(0, 32) : undefined,
+    })),
+  };
+}
+
+function buildSystemPrompt(thread, goal = null, latestUserMessage = "", context = {}) {
   const {
     summary = "",
     includeRawThread = true,
     requestThreadSummary = false,
     includeComments = true,
-  } = context;
+  } = context || {};
 
   const goalSection = formatGoalSection(goal);
   const maxItems = goalHasPlaybook(goal) ? 3 : 6;
 
-  if (!thread && !summary.trim()) {
+  if (!thread && !String(summary || "").trim()) {
     const parts = [BASE_SYSTEM];
     if (goalSection) parts.push("", goalSection);
     parts.push('\nNo thread loaded. Ask the user to click "Load thread from page".');
@@ -201,13 +172,13 @@ export function buildSystemPrompt(
     return parts.join("\n");
   }
 
-  if (!includeRawThread && summary.trim()) {
+  if (!includeRawThread && String(summary || "").trim()) {
     const parts = [BASE_SYSTEM];
     if (goalSection) parts.push("", goalSection);
     parts.push(
       "",
       "# Thread summary",
-      truncate(summary.trim(), MAX_SUMMARY_CHARS),
+      truncate(String(summary).trim(), MAX_SUMMARY_CHARS),
       "",
       "Use only this summary as thread context. Do not ask for raw post/comments unless essential.",
     );
@@ -218,7 +189,7 @@ export function buildSystemPrompt(
   if (!thread) {
     const parts = [BASE_SYSTEM];
     if (goalSection) parts.push("", goalSection);
-    parts.push("", "# Thread summary", truncate(summary.trim(), MAX_SUMMARY_CHARS));
+    parts.push("", "# Thread summary", truncate(String(summary).trim(), MAX_SUMMARY_CHARS));
     appendOutputContract(parts, requestThreadSummary, maxItems);
     return parts.join("\n");
   }
@@ -255,8 +226,8 @@ export function buildSystemPrompt(
     `Title: ${thread.title || "(untitled)"}`,
   );
   if (thread.body) parts.push(`Body: ${truncate(thread.body, 500)}`);
-  if (summary.trim()) {
-    parts.push("", "# Conversation summary", truncate(summary.trim(), MAX_SUMMARY_CHARS));
+  if (String(summary || "").trim()) {
+    parts.push("", "# Conversation summary", truncate(String(summary).trim(), MAX_SUMMARY_CHARS));
   }
   if (includeComments) {
     parts.push(
@@ -274,18 +245,10 @@ export function buildSystemPrompt(
   }
 
   appendOutputContract(parts, requestThreadSummary, maxItems);
-
   return parts.join("\n");
 }
 
-export function buildConversionSystemPrompt(
-  username: string,
-  kind: string,
-  subreddit: string,
-  originalDraft: string,
-  threadSummary: string,
-  goal: Goal | null,
-): string {
+function buildConversionSystemPrompt(username, kind, subreddit, originalDraft, threadSummary, goal) {
   const goalSection = formatGoalSection(goal);
   const parts = [
     BASE_SYSTEM,
@@ -295,7 +258,7 @@ export function buildConversionSystemPrompt(
     `"${truncate(originalDraft, 400)}"`,
     "",
     "# Thread context",
-    truncate(threadSummary.trim(), MAX_SUMMARY_CHARS),
+    truncate(String(threadSummary || "").trim(), MAX_SUMMARY_CHARS),
   ];
   if (goalSection) parts.push("", goalSection);
   parts.push(
@@ -312,28 +275,56 @@ export function buildConversionSystemPrompt(
   return parts.join("\n");
 }
 
-export async function* streamReply(
-  client: Anthropic,
-  system: string,
-  history: ChatTurn[],
-  signal?: AbortSignal,
-): AsyncGenerator<string> {
-  // Trim old turns to keep input tokens low; full history is kept in UI memory
-  const trimmed =
-    history.length > MAX_HISTORY_TURNS
-      ? history.slice(history.length - MAX_HISTORY_TURNS)
-      : history;
-
-  const stream = client.messages.stream({
-    model: MODEL,
-    max_tokens: 1400,
-    system: [{ type: "text", text: system, cache_control: { type: "ephemeral" as const } }],
-    messages: trimmed.map((t) => ({ role: t.role, content: t.content })),
-  }, { signal });
-
-  for await (const event of stream) {
-    if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-      yield event.delta.text;
+/**
+ * Resolve the system prompt for a generate request.
+ * - v2 (`body.prompt`): build on server; ignore any client `system` string.
+ * - legacy: use client `system` so older extension builds keep working until store approval.
+ */
+function resolveSystemPrompt(body) {
+  const prompt = body && body.prompt;
+  if (prompt && typeof prompt === "object" && (prompt.mode === "live" || prompt.mode === "followup")) {
+    if (prompt.mode === "followup") {
+      const fu = prompt.followUp && typeof prompt.followUp === "object" ? prompt.followUp : {};
+      return {
+        source: "server",
+        system: buildConversionSystemPrompt(
+          String(fu.username || "").slice(0, 120),
+          String(fu.kind || "dm").slice(0, 32),
+          String(fu.subreddit || "").slice(0, 120),
+          String(fu.originalDraft || "").slice(0, 4000),
+          String(fu.threadSummary || "").slice(0, MAX_SUMMARY_CHARS + 100),
+          sanitizeGoal(prompt.goal),
+        ),
+      };
     }
+
+    const context = prompt.context && typeof prompt.context === "object" ? prompt.context : {};
+    return {
+      source: "server",
+      system: buildSystemPrompt(
+        sanitizeThread(prompt.thread),
+        sanitizeGoal(prompt.goal),
+        typeof prompt.latestUserMessage === "string" ? prompt.latestUserMessage.slice(0, 4000) : "",
+        {
+          summary: typeof context.summary === "string" ? context.summary.slice(0, MAX_SUMMARY_CHARS + 200) : "",
+          includeRawThread: context.includeRawThread !== false,
+          requestThreadSummary: !!context.requestThreadSummary,
+          includeComments: context.includeComments !== false,
+        },
+      ),
+    };
   }
+
+  if (typeof body.system === "string" && body.system.trim()) {
+    return { source: "legacy-client", system: body.system };
+  }
+
+  return { source: "missing", system: null };
 }
+
+module.exports = {
+  BASE_SYSTEM,
+  buildSystemPrompt,
+  buildConversionSystemPrompt,
+  resolveSystemPrompt,
+};

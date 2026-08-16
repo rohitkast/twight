@@ -1,4 +1,4 @@
-import { buildSystemPrompt, buildConversionSystemPrompt, goalRankingText, type ChatTurn } from "./lib/claude";
+import { goalRankingText, type ChatTurn } from "./lib/claude";
 import { ApiError, createCheckout, fetchMe, streamGenerate } from "./lib/api";
 import { getCurrentUser, signInWithGoogle } from "./lib/auth";
 import { BYOK_ENABLED, FREE_DRAFTS_ON_SIGNUP } from "./lib/config";
@@ -1460,15 +1460,6 @@ function init(): void {
         }
       : null;
 
-    const system = buildConversionSystemPrompt(
-      currentTrackedUser.username,
-      currentTrackedUser.kind,
-      currentTrackedUser.subreddit,
-      currentTrackedUser.originalDraft,
-      currentTrackedUser.threadSummary,
-      goal,
-    );
-
     addBubble("user", userMsg);
     input.value = "";
 
@@ -1483,7 +1474,20 @@ function init(): void {
 
     try {
       const stream = consumeHostedStream(
-        { system, history: currentTrackedUser.followUpTurns },
+        {
+          history: currentTrackedUser.followUpTurns,
+          prompt: {
+            mode: "followup",
+            goal,
+            followUp: {
+              username: currentTrackedUser.username,
+              kind: currentTrackedUser.kind,
+              subreddit: currentTrackedUser.subreddit,
+              originalDraft: currentTrackedUser.originalDraft,
+              threadSummary: currentTrackedUser.threadSummary,
+            },
+          },
+        },
         controller.signal,
         (acc) => {
           renderStructuredDrafts(out, acc || "\u2026");
@@ -1700,18 +1704,22 @@ function init(): void {
 
     try {
       const firstThreadCall = !threadSummary.trim();
-      const system = buildSystemPrompt(thread, activeGoal, apiMessage, {
-        summary: firstThreadCall ? conversationSummary : threadSummary,
-        includeRawThread: firstThreadCall,
-        requestThreadSummary: firstThreadCall,
-        includeComments,
-      });
-
-      // Hosted path: client still builds system prompt (keeps summarization logic local)
+      // Hosted path: server owns BASE_SYSTEM; client sends thread/goal data only.
       const { text: acc } = await consumeHostedStream(
         {
-          system,
           history: history.map((t) => ({ role: t.role, content: t.content })),
+          prompt: {
+            mode: "live",
+            thread,
+            goal: activeGoal,
+            latestUserMessage: apiMessage,
+            context: {
+              summary: firstThreadCall ? conversationSummary : threadSummary,
+              includeRawThread: firstThreadCall,
+              requestThreadSummary: firstThreadCall,
+              includeComments,
+            },
+          },
         },
         controller.signal,
         (partial) => {

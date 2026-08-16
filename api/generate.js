@@ -1,5 +1,6 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { corsHeaders, HOSTED_GEMINI_MODEL, requireUser } = require("./_lib/supabase");
+const { resolveSystemPrompt } = require("./_lib/prompts");
 
 const MAX_HISTORY_TURNS = 6;
 const MAX_SYSTEM_CHARS = 24000;
@@ -28,8 +29,17 @@ module.exports = async function handler(req, res) {
     }
 
     const body = typeof req.body === "string" ? JSON.parse(req.body || "{}") : req.body || {};
-    if (typeof body.system !== "string" || !Array.isArray(body.history)) {
-      res.status(400).json({ error: "Invalid body — expected { system, history }" });
+    if (!Array.isArray(body.history)) {
+      res.status(400).json({ error: "Invalid body — expected { history, prompt? }" });
+      return;
+    }
+
+    const resolved = resolveSystemPrompt(body);
+    if (!resolved.system) {
+      res.status(400).json({
+        error: "Invalid body — expected prompt (live|followup) or legacy system string",
+        code: "missing_prompt",
+      });
       return;
     }
 
@@ -54,7 +64,9 @@ module.exports = async function handler(req, res) {
       return;
     }
 
-    const system = body.system.slice(0, MAX_SYSTEM_CHARS);
+    // v2: ignore any client-provided system string (already ignored inside resolveSystemPrompt).
+    // legacy: keep using client system so current store builds work until the new version is approved.
+    const system = resolved.system.slice(0, MAX_SYSTEM_CHARS);
     const history = body.history
       .filter((t) => t && (t.role === "user" || t.role === "assistant") && typeof t.content === "string")
       .map((t) => ({
@@ -99,6 +111,7 @@ module.exports = async function handler(req, res) {
         res.setHeader("Content-Type", "text/plain; charset=utf-8");
         res.setHeader("Cache-Control", "no-cache, no-transform");
         res.setHeader("X-Hosted-Model", HOSTED_GEMINI_MODEL);
+        res.setHeader("X-Prompt-Source", resolved.source);
         res.status(200);
         wroteAny = true;
       }

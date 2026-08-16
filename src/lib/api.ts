@@ -1,4 +1,5 @@
 import type { ChatTurn } from "./claude";
+import type { Goal, RedditThread } from "./types";
 import { API_BASE_URL } from "./config";
 import { getAccessToken } from "./auth";
 
@@ -60,9 +61,37 @@ export async function createCheckout(): Promise<CheckoutResponse> {
   return (await res.json()) as CheckoutResponse;
 }
 
+export interface GeneratePromptLive {
+  mode: "live";
+  thread: RedditThread | null;
+  goal: Goal | null;
+  latestUserMessage?: string;
+  context?: {
+    summary?: string;
+    includeRawThread?: boolean;
+    requestThreadSummary?: boolean;
+    includeComments?: boolean;
+  };
+}
+
+export interface GeneratePromptFollowUp {
+  mode: "followup";
+  goal: Goal | null;
+  followUp: {
+    username: string;
+    kind: string;
+    subreddit: string;
+    originalDraft: string;
+    threadSummary: string;
+  };
+}
+
 export interface GenerateRequest {
-  system: string;
   history: ChatTurn[];
+  /** Server builds the system prompt from this. Prefer over legacy `system`. */
+  prompt: GeneratePromptLive | GeneratePromptFollowUp;
+  /** @deprecated Ignored when `prompt` is present. Kept only for type compatibility. */
+  system?: string;
 }
 
 export interface GenerateGoalRequest {
