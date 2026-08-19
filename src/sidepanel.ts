@@ -2,8 +2,14 @@ import { goalRankingText, type ChatTurn } from "./lib/claude";
 import { ApiError, createCheckout, fetchMe, streamGenerate } from "./lib/api";
 import { getCurrentUser, signInWithGoogle } from "./lib/auth";
 import { BYOK_ENABLED, FREE_DRAFTS_ON_SIGNUP } from "./lib/config";
-import type { RedditThread, ExtractResponse, Goal, ScrollToUserResponse } from "./lib/types";
-import { goalHasPlaybook, goalNeedsUpgrade } from "./lib/types";
+import type {
+  RedditThread,
+  ExtractResponse,
+  Goal,
+  ScrollToUserResponse,
+  PendingThreadLoad,
+} from "./lib/types";
+import { goalHasPlaybook, goalNeedsUpgrade, PENDING_THREAD_LOAD_KEY } from "./lib/types";
 import { marked } from "marked";
 
 // BYOK path parked — re-enable with BYOK_ENABLED + restore getClient/streamReply imports.
@@ -1584,15 +1590,29 @@ function init(): void {
   });
   chatlistBtn.addEventListener("click", async () => { setMode("chatlist-list"); await renderChatList(); });
 
-  async function doLoad(): Promise<void> {
+  async function doLoad(tabIdOverride?: number): Promise<void> {
     const btnLabel = hasLoaded ? "Reload thread" : "Load thread from page";
     loadBtn.textContent = "Loading\u2026";
     loadBtn.disabled = true;
     summary.textContent = "Loading\u2026";
     summary.className = "muted";
 
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (!tab?.id || !/reddit\.com/.test(tab.url ?? "")) {
+    let tabId = tabIdOverride;
+    let tabUrl = "";
+    if (tabId != null) {
+      try {
+        const tab = await chrome.tabs.get(tabId);
+        tabUrl = tab.url ?? "";
+      } catch {
+        tabId = undefined;
+      }
+    }
+    if (tabId == null) {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      tabId = tab?.id;
+      tabUrl = tab?.url ?? "";
+    }
+    if (!tabId || !/reddit\.com/.test(tabUrl)) {
       summary.textContent = "Open a Reddit post tab, then try again.";
       loadBtn.textContent = btnLabel;
       loadBtn.disabled = false;
@@ -1600,7 +1620,7 @@ function init(): void {
     }
 
     try {
-      const resp = await trySendMessage(tab.id);
+      const resp = await trySendMessage(tabId);
 
       if (!resp) {
         summary.textContent = "Couldn\u2019t reach the page \u2014 refresh the Reddit tab (Ctrl+R) and try again.";
@@ -1649,6 +1669,36 @@ function init(): void {
   }
 
   loadBtn.addEventListener("click", () => { void doLoad(); });
+
+  const PENDING_LOAD_TTL_MS = 60_000;
+  let consumingPendingLoad = false;
+
+  async function consumePendingLoad(): Promise<void> {
+    if (consumingPendingLoad) return;
+    consumingPendingLoad = true;
+    try {
+      const raw = (await chrome.storage.local.get(PENDING_THREAD_LOAD_KEY)) as {
+        [PENDING_THREAD_LOAD_KEY]?: PendingThreadLoad;
+      };
+      const pending = raw[PENDING_THREAD_LOAD_KEY];
+      if (!pending?.tabId) return;
+      if (Date.now() - pending.at > PENDING_LOAD_TTL_MS) {
+        await chrome.storage.local.remove(PENDING_THREAD_LOAD_KEY);
+        return;
+      }
+      await chrome.storage.local.remove(PENDING_THREAD_LOAD_KEY);
+      setMode("live");
+      await doLoad(pending.tabId);
+    } finally {
+      consumingPendingLoad = false;
+    }
+  }
+
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== "local") return;
+    if (!changes[PENDING_THREAD_LOAD_KEY]?.newValue) return;
+    void consumePendingLoad();
+  });
 
   clearBtn.addEventListener("click", () => {
     history.length = 0;
@@ -1849,6 +1899,7 @@ function init(): void {
   void loadGoals();
   void migrateBrokenHistoryEntries().then(() => renderHistoryList());
   setMode("live");
+  void consumePendingLoad();
 }
 
 if (document.readyState === "loading") {

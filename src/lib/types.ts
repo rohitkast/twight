@@ -55,6 +55,16 @@ export type ExtractRequest =
   | { type: "EXTRACT_THREAD" }
   | { type: "SCROLL_TO_USER"; username: string };
 
+/** Content script → service worker (user gesture: open panel + load this tab's thread). */
+export type OpenSidePanelRequest = { type: "OPEN_SIDE_PANEL" };
+
+export const PENDING_THREAD_LOAD_KEY = "pendingThreadLoad";
+
+export interface PendingThreadLoad {
+  tabId: number;
+  at: number;
+}
+
 export type ScrollToUserResponse =
   | { ok: true }
   | { ok: false; error: "not_reddit" | "user_not_found" };

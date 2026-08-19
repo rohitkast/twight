@@ -7,6 +7,7 @@ import type {
   ExtractMeta,
   ScrollToUserResponse,
 } from "./lib/types";
+import { initThreadChip } from "./reddit-chip";
 
 function text(el: Element | null | undefined): string {
   return (el?.textContent ?? "").replace(/\s+/g, " ").trim();
@@ -173,3 +174,5 @@ chrome.runtime.onMessage.addListener(
     return false;
   },
 );
+
+initThreadChip();
