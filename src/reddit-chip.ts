@@ -179,7 +179,7 @@ function mountChip(): void {
 
   const line = document.createElement("div");
   line.className = "line";
-  line.textContent = "Find people in this thread who might want what you offer";
+  line.textContent = "Start conversations with people in this thread who might be interested in your product/service";
 
   copy.append(kicker, line);
   brand.append(img, copy);
@@ -190,7 +190,7 @@ function mountChip(): void {
   const cta = document.createElement("button");
   cta.type = "button";
   cta.className = "cta";
-  cta.textContent = "Find potential customers";
+  cta.textContent = "Start conversations";
   cta.addEventListener("click", (e) => {
     e.preventDefault();
     e.stopPropagation();
