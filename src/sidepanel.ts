@@ -9,7 +9,7 @@ import type {
   ScrollToUserResponse,
   PendingThreadLoad,
 } from "./lib/types";
-import { goalHasPlaybook, goalNeedsUpgrade, PENDING_THREAD_LOAD_KEY } from "./lib/types";
+import { goalNeedsUpgrade, PENDING_THREAD_LOAD_KEY } from "./lib/types";
 import { marked } from "marked";
 
 // BYOK path parked — re-enable with BYOK_ENABLED + restore getClient/streamReply imports.
@@ -1183,7 +1183,7 @@ function init(): void {
       `<ol class="onboarding-steps">` +
       `<li><strong>Sign in with Google</strong> &mdash; new accounts get 10 free drafts.</li>` +
       `<li><strong>Open a Reddit post</strong> where your target users are active, then click <strong>Load thread from page</strong> above.</li>` +
-      `<li><strong>Select a goal &amp; hit Generate</strong> &mdash; get tailored replies, comments, or DMs. Goals need an AI playbook (built on the Goals page).</li>` +
+      `<li><strong>Hit Generate</strong> &mdash; get conversation starters, replies, or DMs. A goal is optional and helps pick who to talk to in the thread.</li>` +
       `<li><strong>Pick the best draft.</strong> For DMs, click <strong>Save</strong> &mdash; if they reply, open <strong>Chat List</strong> to continue with full thread context.</li>` +
       `</ol>`;
     chat.appendChild(card);
@@ -1551,9 +1551,6 @@ function init(): void {
     const id = goalSelect.value;
     activeGoal = id ? (goals.find((g) => g.id === id) ?? null) : null;
     await chrome.storage.local.set({ activeGoalId: id || null });
-    if (activeGoal && goalNeedsUpgrade(activeGoal)) {
-      showToast("This goal needs a playbook — open Goals to upgrade it.");
-    }
   });
 
   chrome.storage.onChanged.addListener((changes) => {
@@ -1718,15 +1715,6 @@ function init(): void {
     if (!requireSignedIn()) return;
     if (!requireDrafts()) return;
 
-    if (!activeGoal) {
-      showToast("Select a goal first — click the goal dropdown to choose one.");
-      return;
-    }
-    if (!goalHasPlaybook(activeGoal)) {
-      showToast("Upgrade this goal with a playbook first (Goals page).");
-      chrome.tabs.create({ url: chrome.runtime.getURL("goals.html") });
-      return;
-    }
     if (!thread) {
       addBubble("assistant", "Load a Reddit thread first by clicking **Load thread from page**.");
       return;
@@ -1738,8 +1726,9 @@ function init(): void {
 
     // Instruction is only active when the toggle is on
     const instruction = instructionActive ? input.value.trim() : "";
-    // The API always needs a non-empty user message; use instruction → goal ranking keywords
-    const apiMessage = instruction || goalRankingText(activeGoal);
+    // API needs a non-empty user message; ranking uses instruction → goal keywords → generic fallback.
+    const apiMessage =
+      instruction || goalRankingText(activeGoal) || "Draft conversation starters for this thread";
 
     // Show instruction bubble only when the user actually typed something
     if (instruction) addBubble("user", instruction);

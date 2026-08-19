@@ -26,7 +26,8 @@ export function formatGoalSection(goal: Goal | null): string | null {
 }
 
 /** Keywords for comment ranking when the user has no custom instruction. */
-export function goalRankingText(goal: Goal): string {
+export function goalRankingText(goal: Goal | null | undefined): string {
+  if (!goal) return "";
   const bits = [
     goal.name,
     goal.product,
