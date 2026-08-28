@@ -1,7 +1,7 @@
 import { goalRankingText, type ChatTurn } from "./lib/claude";
 import { ApiError, createCheckout, fetchMe, streamGenerate } from "./lib/api";
-import { getCurrentUser, signInWithGoogle } from "./lib/auth";
-import { BYOK_ENABLED, FREE_DRAFTS_ON_SIGNUP } from "./lib/config";
+import { getCurrentUser, isAnonymousUser, ensureSession, signInWithGoogle } from "./lib/auth";
+import { BYOK_ENABLED, FREE_DRAFTS_ANONYMOUS } from "./lib/config";
 import type {
   RedditThread,
   ExtractResponse,
@@ -794,15 +794,16 @@ function init(): void {
   let currentTrackedUser: TrackedUser | null = null;
   let selectedMood: string | null = null;
   let draftsRemaining: number | null = null;
-  let draftsBarMax = FREE_DRAFTS_ON_SIGNUP;
+  let draftsBarMax = FREE_DRAFTS_ANONYMOUS;
   let signedIn = false;
+  let isAnonymous = false;
   /** After Skip, do not re-prompt for a looking-for line this panel session. */
   let skipLookingForPrompt = false;
   /** Skip path: ask the model for up to 10 unscoped drafts. */
   let unscopedGenerate = false;
 
   async function startCheckout(): Promise<void> {
-    if (!requireSignedIn()) return;
+    if (!requireGoogleAccount()) return;
     const buyDefault = draftsModalBuy.textContent || "Buy drafts";
     try {
       draftsBadge.disabled = true;
@@ -942,7 +943,8 @@ function init(): void {
   }
 
   function updateAuthUi(): void {
-    signInBtn.classList.toggle("hidden", signedIn);
+    // Guests keep Sign in visible so they can upgrade later; Google users hide it.
+    signInBtn.classList.toggle("hidden", signedIn && !isAnonymous);
     draftsBadge.classList.toggle("hidden", !signedIn);
 
     draftsBadge.classList.remove("low", "empty", "loading", "clickable");
@@ -957,8 +959,13 @@ function init(): void {
 
       if (draftsRemaining <= 0) {
         draftsBadge.classList.add("empty", "clickable");
-        draftsBadge.title = "No drafts left — click to buy more";
-        draftsBadge.setAttribute("aria-label", "No drafts left. Buy drafts");
+        draftsBadge.title = isAnonymous
+          ? "No drafts left — sign in for more"
+          : "No drafts left — click to buy more";
+        draftsBadge.setAttribute(
+          "aria-label",
+          isAnonymous ? "No drafts left. Sign in for more" : "No drafts left. Buy drafts",
+        );
       } else {
         draftsBadge.title = `${draftsRemaining} of ${max} drafts remaining`;
         draftsBadge.setAttribute("aria-label", `${draftsRemaining} drafts remaining`);
@@ -976,8 +983,25 @@ function init(): void {
   }
 
   async function refreshAccount(showErrorToast = false): Promise<void> {
-    const user = await getCurrentUser();
+    let user = await getCurrentUser();
+    if (!user) {
+      try {
+        const session = await ensureSession();
+        user = session.user;
+      } catch (e) {
+        signedIn = false;
+        isAnonymous = false;
+        draftsRemaining = null;
+        updateAuthUi();
+        if (showErrorToast) {
+          showToast(e instanceof Error ? e.message : "Could not start a guest session");
+        }
+        console.error("ensureSession failed", e);
+        return;
+      }
+    }
     signedIn = !!user;
+    isAnonymous = isAnonymousUser(user);
     if (!user) {
       draftsRemaining = null;
       updateAuthUi();
@@ -1003,7 +1027,7 @@ function init(): void {
       authModalGoogle.disabled = true;
       await signInWithGoogle();
       authModal.close();
-      showToast("Signed in");
+      showToast("Signed in with Google");
       await refreshAccount(true);
       if (draftsRemaining !== null) {
         showToast(`${draftsRemaining} draft${draftsRemaining === 1 ? "" : "s"} remaining`);
@@ -1016,15 +1040,29 @@ function init(): void {
     }
   }
 
-  function requireSignedIn(): boolean {
+  async function ensureGuestSession(): Promise<boolean> {
     if (signedIn) return true;
+    try {
+      await ensureSession();
+      await refreshAccount(true);
+      return signedIn;
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : "Could not start a guest session");
+      authModal.showModal();
+      return false;
+    }
+  }
+
+  function requireGoogleAccount(): boolean {
+    if (signedIn && !isAnonymous) return true;
     authModal.showModal();
     return false;
   }
 
   function requireDrafts(): boolean {
     if (draftsRemaining !== null && draftsRemaining <= 0) {
-      draftsModal.showModal();
+      if (isAnonymous) authModal.showModal();
+      else draftsModal.showModal();
       return false;
     }
     return true;
@@ -1041,7 +1079,8 @@ function init(): void {
     }
     // Only open checkout when out of drafts
     if (draftsRemaining <= 0) {
-      void startCheckout();
+      if (isAnonymous) authModal.showModal();
+      else void startCheckout();
     }
   });
   draftsModalBuy.addEventListener("click", () => {
@@ -1190,7 +1229,7 @@ function init(): void {
     card.innerHTML =
       `<p class="onboarding-title">Get started</p>` +
       `<ol class="onboarding-steps">` +
-      `<li><strong>Sign in with Google</strong> &mdash; new accounts get 10 free drafts.</li>` +
+      `<li><strong>You get ${FREE_DRAFTS_ANONYMOUS} free drafts</strong> to start &mdash; no Google sign-in needed. Sign in later for more.</li>` +
       `<li><strong>Open a Reddit post</strong> where your target users are active, then click <strong>Load thread from page</strong> above.</li>` +
       `<li><strong>Hit Generate</strong> &mdash; get conversation starters, replies, or DMs. A goal is optional and helps pick who to talk to in the thread.</li>` +
       `<li><strong>Pick the best draft.</strong> For DMs, click <strong>Save</strong> &mdash; if they reply, open <strong>Chat List</strong> to continue with full thread context.</li>` +
@@ -1457,7 +1496,7 @@ function init(): void {
   async function sendFollowUp(): Promise<void> {
     if (!currentTrackedUser) return;
     if (generateBtn.disabled || isGenerating) return;
-    if (!requireSignedIn()) return;
+    if (!(await ensureGuestSession())) return;
     if (!requireDrafts()) return;
     const userMsg = input.value.trim();
     if (!userMsg) {
@@ -1774,7 +1813,7 @@ function init(): void {
 
   async function send(): Promise<void> {
     if (generateBtn.disabled || isGenerating) return;
-    if (!requireSignedIn()) return;
+    if (!(await ensureGuestSession())) return;
     if (!requireDrafts()) return;
 
     if (!thread) {

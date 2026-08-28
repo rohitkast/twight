@@ -32,6 +32,10 @@ async function requireUser(req) {
   return { user: data.user, admin };
 }
 
+function signupDraftsForUser(user) {
+  return user && user.is_anonymous ? 5 : 10;
+}
+
 function corsHeaders(origin) {
   const allow = typeof origin === "string" && origin !== "null" ? origin : "*";
   return {
@@ -62,6 +66,7 @@ function resolveHostedGeminiModel() {
 module.exports = {
   getAdminClient,
   requireUser,
+  signupDraftsForUser,
   corsHeaders,
   DRAFTS_PER_PACK: Number(process.env.DRAFTS_PER_PACK || 50),
   POLAR_PRODUCT_ID: process.env.POLAR_PRODUCT_ID || "8e149b00-a6af-4db6-9829-7b983438c08f",

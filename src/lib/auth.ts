@@ -163,6 +163,48 @@ export async function getCurrentUser(): Promise<User | null> {
   return raw?.user ?? null;
 }
 
+export function isAnonymousUser(user: User | null | undefined): boolean {
+  return !!user?.is_anonymous;
+}
+
+let ensureInFlight: Promise<Session> | null = null;
+
+/**
+ * Restore a stored session, or create a guest (anonymous) Supabase user.
+ * Enable Anonymous sign-ins in Supabase → Authentication → Providers.
+ */
+export async function ensureSession(): Promise<Session> {
+  if (ensureInFlight) return ensureInFlight;
+  const pending = (async () => {
+    const existing = await getStoredSession();
+    if (existing?.access_token) return existing;
+
+    const raw = await readStored();
+    if (raw && isAccessTokenFresh(raw, 0)) return sessionFromStored(raw);
+
+    return signInAnonymously();
+  })();
+  ensureInFlight = pending;
+  try {
+    return await pending;
+  } finally {
+    if (ensureInFlight === pending) ensureInFlight = null;
+  }
+}
+
+async function signInAnonymously(): Promise<Session> {
+  const supabase = getSupabase();
+  const { data, error } = await supabase.auth.signInAnonymously();
+  if (error || !data.session) {
+    throw new Error(
+      error?.message ||
+        "Could not start a guest session. Enable Anonymous sign-ins in the Supabase Auth dashboard.",
+    );
+  }
+  await persistSession(data.session);
+  return data.session;
+}
+
 /**
  * Google OAuth via chrome.identity.
  * Add the redirect from chrome.identity.getRedirectURL("auth") to Supabase

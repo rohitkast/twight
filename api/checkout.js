@@ -20,9 +20,9 @@ module.exports = async function handler(req, res) {
   try {
     const { user, admin } = await requireUser(req);
     const email = user.email;
-    if (!email) {
+    if (user.is_anonymous || !email) {
       res.status(400).json({
-        error: "Your account has no email. Sign in with Google to buy drafts.",
+        error: "Sign in with Google to buy drafts.",
         code: "no_email",
       });
       return;

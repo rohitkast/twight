@@ -30,20 +30,26 @@ create table if not exists public.polar_orders (
   created_at timestamptz not null default now()
 );
 
--- Auto-create profile with 10 free drafts on signup
+-- Auto-create profile: 5 drafts for anonymous guests, 10 for Google (and other) signups
 create or replace function public.handle_new_user()
 returns trigger
 language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  bonus integer;
+  reason text;
 begin
+  bonus := case when coalesce(new.is_anonymous, false) then 5 else 10 end;
+  reason := case when coalesce(new.is_anonymous, false) then 'anon_signup_bonus' else 'signup_bonus' end;
+
   insert into public.profiles (id, email, drafts_balance)
-  values (new.id, new.email, 10)
+  values (new.id, new.email, bonus)
   on conflict (id) do nothing;
 
   insert into public.draft_ledger (user_id, delta, reason, metadata)
-  values (new.id, 10, 'signup_bonus', '{}'::jsonb);
+  values (new.id, bonus, reason, '{}'::jsonb);
 
   return new;
 end;

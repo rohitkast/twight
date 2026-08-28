@@ -6,6 +6,14 @@
 2. Paste and run the contents of `supabase/schema.sql`
 3. Confirm tables: `profiles`, `draft_ledger`, `polar_orders`
 
+Re-run `handle_new_user` from `schema.sql` after pulling guest-draft changes (anonymous users get **5** drafts; Google signups still get **10**).
+
+## 1b. Enable Anonymous sign-ins (required for generate without Google)
+
+Supabase → Authentication → Providers → **Anonymous** → enable.
+
+Without this, the side panel cannot create a guest session and Generate will still ask for Google.
+
 ## 2. Supabase Auth redirect URL (required for Chrome sign-in)
 
 Supabase → Authentication → URL Configuration → Redirect URLs → add **both**:

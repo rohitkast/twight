@@ -1,5 +1,5 @@
 import { ApiError, fetchMe, generateGoalPlaybook } from "./lib/api";
-import { getAccessToken, getCurrentUser, signInWithGoogle } from "./lib/auth";
+import { getAccessToken, getCurrentUser, ensureSession, signInWithGoogle } from "./lib/auth";
 import type { Goal } from "./lib/types";
 import { goalNeedsUpgrade } from "./lib/types";
 
@@ -245,7 +245,16 @@ function addChipFromInput(): void {
 
 async function runGenerate(isRegenerate: boolean): Promise<void> {
   if (!signedIn) {
-    flash("Sign in to generate a playbook.", true);
+    try {
+      await ensureSession();
+      await refreshAuth();
+    } catch {
+      flash("Could not start a guest session. Enable Anonymous sign-ins in Supabase.", true);
+      return;
+    }
+  }
+  if (!signedIn) {
+    flash("Could not start a guest session.", true);
     return;
   }
   const name = nameInput.value.trim();
@@ -353,26 +362,31 @@ function flash(msg: string, err = false): void {
 
 function updateAuthLabel(): void {
   if (!signedIn) {
-    authStatus.textContent = "Sign in required to build playbooks";
+    authStatus.textContent = "Starting guest session\u2026";
     return;
   }
   if (draftsRemaining !== null) {
-    authStatus.textContent = `Signed in · ${draftsRemaining} draft${draftsRemaining === 1 ? "" : "s"} left`;
+    authStatus.textContent = `Drafts · ${draftsRemaining} left`;
   } else {
-    authStatus.textContent = "Signed in";
+    authStatus.textContent = "Ready";
   }
 }
 
 function updateAuthUi(): void {
-  signInBtn.classList.toggle("hidden", signedIn);
   updateAuthLabel();
   updateActionButtons();
 }
 
 async function refreshAuth(): Promise<void> {
+  try {
+    await ensureSession();
+  } catch {
+    /* guest session optional on this page */
+  }
   const token = await getAccessToken();
   const user = await getCurrentUser();
   signedIn = !!(token && user);
+  signInBtn.classList.toggle("hidden", signedIn && !user?.is_anonymous);
   if (signedIn) {
     try {
       const me = await fetchMe();

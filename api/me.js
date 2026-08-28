@@ -1,4 +1,4 @@
-const { corsHeaders, requireUser } = require("./_lib/supabase");
+const { corsHeaders, requireUser, signupDraftsForUser } = require("./_lib/supabase");
 
 module.exports = async function handler(req, res) {
   const headers = corsHeaders(req.headers.origin);
@@ -28,9 +28,10 @@ module.exports = async function handler(req, res) {
 
     if (!profile) {
       const email = user.email || null;
+      const bonus = signupDraftsForUser(user);
       const { data: created, error: insertErr } = await admin
         .from("profiles")
-        .upsert({ id: user.id, email, drafts_balance: 10 }, { onConflict: "id" })
+        .upsert({ id: user.id, email, drafts_balance: bonus }, { onConflict: "id" })
         .select("drafts_balance, email")
         .single();
       if (insertErr) {
@@ -39,12 +40,12 @@ module.exports = async function handler(req, res) {
       }
       await admin.from("draft_ledger").insert({
         user_id: user.id,
-        delta: 10,
-        reason: "signup_bonus",
+        delta: bonus,
+        reason: user.is_anonymous ? "anon_signup_bonus" : "signup_bonus",
       });
       res.status(200).json({
         email: (created && created.email) || email,
-        draftsRemaining: (created && created.drafts_balance) != null ? created.drafts_balance : 10,
+        draftsRemaining: (created && created.drafts_balance) != null ? created.drafts_balance : bonus,
       });
       return;
     }
