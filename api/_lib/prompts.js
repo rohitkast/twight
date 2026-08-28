@@ -74,8 +74,19 @@ function formatGoalSection(goal) {
   return `# Goal\n${name}: ${description}`;
 }
 
+function clampItemCount(n, fallback = 6) {
+  const num = Number(n);
+  if (!Number.isFinite(num)) return fallback;
+  return Math.max(1, Math.min(10, Math.round(num)));
+}
+
+function resolveMaxItems(goal, context) {
+  if (context && context.maxItems != null) return clampItemCount(context.maxItems);
+  return goalHasPlaybook(goal) ? 3 : 6;
+}
+
 function appendOutputContract(parts, requestThreadSummary, maxItems = 6) {
-  const capped = Math.max(1, Math.min(6, maxItems));
+  const capped = clampItemCount(maxItems);
   parts.push(
     "",
     "Output contract:",
@@ -162,7 +173,7 @@ function buildSystemPrompt(thread, goal = null, latestUserMessage = "", context 
   } = context || {};
 
   const goalSection = formatGoalSection(goal);
-  const maxItems = goalHasPlaybook(goal) ? 3 : 6;
+  const maxItems = resolveMaxItems(goal, context);
 
   if (!thread && !String(summary || "").trim()) {
     const parts = [BASE_SYSTEM];
@@ -310,6 +321,7 @@ function resolveSystemPrompt(body) {
           includeRawThread: context.includeRawThread !== false,
           requestThreadSummary: !!context.requestThreadSummary,
           includeComments: context.includeComments !== false,
+          maxItems: typeof context.maxItems === "number" ? context.maxItems : undefined,
         },
       ),
     };

@@ -137,7 +137,7 @@ Other:
 - Comments may be truncated for brevity. Never mention or allude to truncation, missing text, or incomplete comments in any draft.`;
 
 function appendOutputContract(parts: string[], requestThreadSummary: boolean, maxItems = 6): void {
-  const capped = Math.max(1, Math.min(6, maxItems));
+  const capped = Math.max(1, Math.min(10, maxItems));
   parts.push(
     "",
     "Output contract:",

@@ -771,6 +771,11 @@ function init(): void {
   const authModalGoogle = document.getElementById("auth-modal-google") as HTMLButtonElement;
   const draftsModal = document.getElementById("drafts-modal") as HTMLDialogElement;
   const draftsModalBuy = document.getElementById("drafts-modal-buy") as HTMLButtonElement;
+  const lookingForModal = document.getElementById("looking-for-modal") as HTMLDialogElement;
+  const lookingForInput = document.getElementById("looking-for-input") as HTMLTextAreaElement;
+  const lookingForSkip = document.getElementById("looking-for-skip") as HTMLButtonElement;
+  const lookingForFullGoal = document.getElementById("looking-for-full-goal") as HTMLButtonElement;
+  const lookingForContinue = document.getElementById("looking-for-continue") as HTMLButtonElement;
 
   let mode: "live" | "history-list" | "history-detail" | "chatlist-list" | "chatlist-detail" = "live";
   let includeComments = true;
@@ -791,6 +796,10 @@ function init(): void {
   let draftsRemaining: number | null = null;
   let draftsBarMax = FREE_DRAFTS_ON_SIGNUP;
   let signedIn = false;
+  /** After Skip, do not re-prompt for a looking-for line this panel session. */
+  let skipLookingForPrompt = false;
+  /** Skip path: ask the model for up to 10 unscoped drafts. */
+  let unscopedGenerate = false;
 
   async function startCheckout(): Promise<void> {
     if (!requireSignedIn()) return;
@@ -1710,6 +1719,59 @@ function init(): void {
     loadBtn.textContent = "Load thread from page";
   });
 
+  function syncLookingForContinue(): void {
+    lookingForContinue.disabled = lookingForInput.value.trim().length < 3;
+  }
+
+  async function saveLookingForGoal(line: string): Promise<void> {
+    const trimmed = line.trim();
+    const name = trimmed.length > 48 ? `${trimmed.slice(0, 45)}\u2026` : trimmed;
+    const goal: Goal = {
+      id: crypto.randomUUID(),
+      name,
+      description: trimmed,
+      intent: trimmed,
+    };
+    const { goals = [] } = (await chrome.storage.local.get("goals")) as { goals?: Goal[] };
+    await chrome.storage.local.set({ goals: [...goals, goal], activeGoalId: goal.id });
+    activeGoal = goal;
+    skipLookingForPrompt = false;
+    unscopedGenerate = false;
+    await loadGoals();
+  }
+
+  function promptLookingForIfNeeded(): boolean {
+    if (activeGoal || skipLookingForPrompt) return false;
+    lookingForInput.value = "";
+    syncLookingForContinue();
+    lookingForModal.showModal();
+    lookingForInput.focus();
+    return true;
+  }
+
+  lookingForInput.addEventListener("input", () => syncLookingForContinue());
+  lookingForSkip.addEventListener("click", () => {
+    skipLookingForPrompt = true;
+    unscopedGenerate = true;
+    lookingForModal.close();
+    void send();
+  });
+  lookingForFullGoal.addEventListener("click", () => {
+    lookingForModal.close();
+    chrome.tabs.create({ url: chrome.runtime.getURL("goals.html") });
+    showToast("Add a goal, then hit Generate.");
+  });
+  lookingForContinue.addEventListener("click", () => {
+    const line = lookingForInput.value.trim();
+    if (line.length < 3) return;
+    lookingForContinue.disabled = true;
+    void saveLookingForGoal(line).then(() => {
+      lookingForModal.close();
+      showToast("Saved. Upgrade this goal on the Goals page for tighter targeting.");
+      void send();
+    });
+  });
+
   async function send(): Promise<void> {
     if (generateBtn.disabled || isGenerating) return;
     if (!requireSignedIn()) return;
@@ -1720,6 +1782,8 @@ function init(): void {
       return;
     }
 
+    if (promptLookingForIfNeeded()) return;
+
     // Lock immediately so a second click can't start another stream.
     isGenerating = true;
     generateBtn.disabled = true;
@@ -1729,6 +1793,7 @@ function init(): void {
     // API needs a non-empty user message; ranking uses instruction → goal keywords → generic fallback.
     const apiMessage =
       instruction || goalRankingText(activeGoal) || "Draft conversation starters for this thread";
+    const maxItems = !activeGoal && unscopedGenerate ? 10 : undefined;
 
     // Show instruction bubble only when the user actually typed something
     if (instruction) addBubble("user", instruction);
@@ -1757,6 +1822,7 @@ function init(): void {
               includeRawThread: firstThreadCall,
               requestThreadSummary: firstThreadCall,
               includeComments,
+              maxItems,
             },
           },
         },

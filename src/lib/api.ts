@@ -71,6 +71,8 @@ export interface GeneratePromptLive {
     includeRawThread?: boolean;
     requestThreadSummary?: boolean;
     includeComments?: boolean;
+    /** Cap ITEM frames (1–10). Skip-unscoped generate uses 10. */
+    maxItems?: number;
   };
 }
 

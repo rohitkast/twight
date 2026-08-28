@@ -130,6 +130,24 @@
     <form method="dialog" class="modal-backdrop"><button>close</button></form>
   </dialog>
 
+  <dialog id="looking-for-modal" class="modal">
+    <div class="modal-box">
+      <h3 class="text-lg font-bold">Who are you looking for?</h3>
+      <p class="py-3 text-sm opacity-80">
+        You can skip this. A one-liner helps Twight pick people in this thread who might be a fit, instead of drafting for everyone.
+      </p>
+      <textarea id="looking-for-input" class="textarea textarea-sm w-full" rows="2"
+        placeholder="e.g. people asking how to get freelance clients"></textarea>
+      <p class="pt-2 text-xs opacity-70">We&rsquo;ll save this as a goal so the next thread can reuse it. You can add a fuller goal later for better drafts.</p>
+      <div class="modal-action flex-wrap">
+        <button id="looking-for-skip" type="button" class="btn btn-ghost btn-sm">Skip</button>
+        <button id="looking-for-full-goal" type="button" class="btn btn-ghost btn-sm">Create a full goal</button>
+        <button id="looking-for-continue" type="button" class="btn btn-primary btn-sm" disabled>Save and continue</button>
+      </div>
+    </div>
+    <form method="dialog" class="modal-backdrop"><button>close</button></form>
+  </dialog>
+
   <!-- Feedback modal -->
   <div id="feedback-overlay" class="hidden" role="dialog" aria-modal="true" aria-labelledby="feedback-title">
     <div id="feedback-card">
