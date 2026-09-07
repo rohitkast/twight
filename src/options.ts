@@ -1,5 +1,5 @@
-import { ApiError, createCheckout, fetchMe } from "./lib/api";
-import { getCurrentUser, isAnonymousUser, signInWithGoogle, signOut } from "./lib/auth";
+import { ApiError, createCheckout, fetchMe, signInWithGoogleAndClaim } from "./lib/api";
+import { getCurrentUser, isAnonymousUser, signOut } from "./lib/auth";
 
 const accountStatus = document.getElementById("account-status") as HTMLElement;
 const draftsStatus = document.getElementById("drafts-status") as HTMLElement;
@@ -89,8 +89,8 @@ async function refresh(opts?: { fromUserClick?: boolean }): Promise<void> {
 signInBtn.addEventListener("click", async () => {
   try {
     signInBtn.disabled = true;
-    await signInWithGoogle();
-    setStatus("Signed in.");
+    const { claimFailed } = await signInWithGoogleAndClaim();
+    setStatus(claimFailed ? "Signed in — could not move guest drafts." : "Signed in.");
     await refresh();
   } catch (e) {
     setStatus(e instanceof Error ? e.message : "Sign-in failed");

@@ -1,5 +1,5 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
-const { corsHeaders, HOSTED_GEMINI_MODEL, requireUser } = require("./_lib/supabase");
+const { corsHeaders, HOSTED_GEMINI_MODEL, requireUser, applyInstallGrant, isAuthAnonymous } = require("./_lib/supabase");
 const { resolveSystemPrompt } = require("./_lib/prompts");
 
 const MAX_HISTORY_TURNS = 6;
@@ -43,6 +43,16 @@ module.exports = async function handler(req, res) {
       return;
     }
 
+    const grant = await applyInstallGrant(admin, user, req);
+    if (grant.error && isAuthAnonymous(user)) {
+      res.status(402).json({
+        error: "No drafts left. Sign in or buy more to continue.",
+        code: "insufficient_drafts",
+        draftsRemaining: 0,
+      });
+      return;
+    }
+
     const { data: profile, error: profileErr } = await admin
       .from("profiles")
       .select("drafts_balance")
@@ -54,7 +64,8 @@ module.exports = async function handler(req, res) {
       return;
     }
 
-    const balance = profile?.drafts_balance ?? 0;
+    const balance =
+      grant.draftsRemaining != null ? grant.draftsRemaining : (profile?.drafts_balance ?? 0);
     if (balance <= 0) {
       res.status(402).json({
         error: "No drafts left. Buy more to continue.",

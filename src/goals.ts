@@ -1,5 +1,5 @@
-import { ApiError, fetchMe, generateGoalPlaybook } from "./lib/api";
-import { getAccessToken, getCurrentUser, ensureSession, signInWithGoogle } from "./lib/auth";
+import { ApiError, fetchMe, generateGoalPlaybook, signInWithGoogleAndClaim } from "./lib/api";
+import { getAccessToken, getCurrentUser, ensureSession } from "./lib/auth";
 import type { Goal } from "./lib/types";
 import { goalNeedsUpgrade } from "./lib/types";
 
@@ -403,9 +403,9 @@ async function refreshAuth(): Promise<void> {
 signInBtn.addEventListener("click", async () => {
   signInBtn.disabled = true;
   try {
-    await signInWithGoogle();
+    const { claimFailed } = await signInWithGoogleAndClaim();
     await refreshAuth();
-    flash("Signed in.");
+    flash(claimFailed ? "Signed in — could not move guest drafts." : "Signed in.");
   } catch (e) {
     flash(e instanceof Error ? e.message : String(e), true);
   } finally {

@@ -1,5 +1,5 @@
 const { GoogleGenerativeAI } = require("@google/generative-ai");
-const { corsHeaders, HOSTED_GEMINI_MODEL, requireUser } = require("./_lib/supabase");
+const { corsHeaders, HOSTED_GEMINI_MODEL, requireUser, applyInstallGrant, isAuthAnonymous } = require("./_lib/supabase");
 
 const MAX_FIELD = 2000;
 
@@ -90,6 +90,16 @@ module.exports = async function handler(req, res) {
       return;
     }
 
+    const grant = await applyInstallGrant(admin, user, req);
+    if (grant.error && isAuthAnonymous(user) && isRegenerate) {
+      res.status(402).json({
+        error: "No drafts left. Buy more to regenerate this playbook.",
+        code: "insufficient_drafts",
+        draftsRemaining: 0,
+      });
+      return;
+    }
+
     const { data: profile, error: profileErr } = await admin
       .from("profiles")
       .select("drafts_balance")
@@ -101,7 +111,8 @@ module.exports = async function handler(req, res) {
       return;
     }
 
-    let balance = profile?.drafts_balance ?? 0;
+    let balance =
+      grant.draftsRemaining != null ? grant.draftsRemaining : (profile?.drafts_balance ?? 0);
 
     // First playbook gen is free; regenerate costs 1 draft.
     if (isRegenerate) {

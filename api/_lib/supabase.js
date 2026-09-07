@@ -32,8 +32,47 @@ async function requireUser(req) {
   return { user: data.user, admin };
 }
 
-function signupDraftsForUser(user) {
-  return user && user.is_anonymous ? 5 : 10;
+function isAuthAnonymous(user) {
+  if (!user) return false;
+  if (user.is_anonymous === true) return true;
+  const identities = user.identities;
+  if (!Array.isArray(identities)) return false;
+  return identities.some((i) => i && i.provider === "anonymous");
+}
+
+/** Guest +5 is per Chrome install, not per auth user. Never grant here. */
+function signupDraftsForUser(_user) {
+  return 0;
+}
+
+function installIdFromReq(req) {
+  const raw = req.headers["x-twight-install-id"];
+  const header = Array.isArray(raw) ? raw[0] : raw;
+  if (typeof header !== "string") return null;
+  const id = header.trim();
+  if (id.length < 8 || id.length > 80) return null;
+  if (!/^[a-zA-Z0-9._-]+$/.test(id)) return null;
+  return id;
+}
+
+/** First guest on this install gets 5. Later guests on the same install get 0. */
+async function applyInstallGrant(admin, user, req) {
+  const anon = isAuthAnonymous(user);
+  const installId = installIdFromReq(req);
+  if (!installId) {
+    return { draftsRemaining: anon ? 0 : null, error: anon ? "missing_install_id" : null };
+  }
+  const { data, error } = await admin.rpc("register_install_grant", {
+    p_install_id: installId,
+    p_user_id: user.id,
+    p_is_anonymous: anon,
+  });
+  if (error) {
+    console.error("register_install_grant failed", error);
+    return { draftsRemaining: anon ? 0 : null, error };
+  }
+  if (typeof data === "number") return { draftsRemaining: data, error: null };
+  return { draftsRemaining: null, error: null };
 }
 
 function corsHeaders(origin) {
@@ -41,7 +80,7 @@ function corsHeaders(origin) {
   return {
     "Access-Control-Allow-Origin": allow,
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "Authorization, Content-Type",
+    "Access-Control-Allow-Headers": "Authorization, Content-Type, X-Twight-Install-Id",
   };
 }
 
@@ -66,7 +105,10 @@ function resolveHostedGeminiModel() {
 module.exports = {
   getAdminClient,
   requireUser,
+  isAuthAnonymous,
   signupDraftsForUser,
+  installIdFromReq,
+  applyInstallGrant,
   corsHeaders,
   DRAFTS_PER_PACK: Number(process.env.DRAFTS_PER_PACK || 50),
   POLAR_PRODUCT_ID: process.env.POLAR_PRODUCT_ID || "8e149b00-a6af-4db6-9829-7b983438c08f",

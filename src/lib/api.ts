@@ -1,7 +1,7 @@
 import type { ChatTurn } from "./claude";
 import type { Goal, RedditThread } from "./types";
 import { API_BASE_URL } from "./config";
-import { getAccessToken } from "./auth";
+import { getAccessToken, getInstallId, signInWithGoogle } from "./auth";
 
 export class ApiError extends Error {
   constructor(
@@ -30,9 +30,11 @@ const FOOTER_HOLD_CHARS = 40;
 async function authHeaders(): Promise<HeadersInit> {
   const token = await getAccessToken();
   if (!token) throw new ApiError("Not signed in", 401, "unauthorized");
+  const installId = await getInstallId();
   return {
     Authorization: `Bearer ${token}`,
     "Content-Type": "application/json",
+    "X-Twight-Install-Id": installId,
   };
 }
 
@@ -59,6 +61,36 @@ export async function createCheckout(): Promise<CheckoutResponse> {
     throw new ApiError(body.error || `Checkout failed (${res.status})`, res.status, body.code);
   }
   return (await res.json()) as CheckoutResponse;
+}
+
+export async function claimAnonymous(anonymousUserId: string): Promise<MeResponse> {
+  const res = await fetch(`${API_BASE_URL}/api/auth/claim-anonymous`, {
+    method: "POST",
+    headers: await authHeaders(),
+    body: JSON.stringify({ anonymousUserId }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string; code?: string };
+    throw new ApiError(body.error || `Claim failed (${res.status})`, res.status, body.code);
+  }
+  return (await res.json()) as MeResponse;
+}
+
+/** Google OAuth, then move leftover guest drafts onto that account (best-effort). */
+export async function signInWithGoogleAndClaim(): Promise<{
+  draftsRemaining: number | null;
+  claimFailed: boolean;
+}> {
+  const { previousAnonymousUserId } = await signInWithGoogle();
+  if (!previousAnonymousUserId) {
+    return { draftsRemaining: null, claimFailed: false };
+  }
+  try {
+    const me = await claimAnonymous(previousAnonymousUserId);
+    return { draftsRemaining: me.draftsRemaining, claimFailed: false };
+  } catch {
+    return { draftsRemaining: null, claimFailed: true };
+  }
 }
 
 export interface GeneratePromptLive {

@@ -1,4 +1,4 @@
-const { corsHeaders, requireUser, signupDraftsForUser } = require("./_lib/supabase");
+const { corsHeaders, requireUser, applyInstallGrant } = require("./_lib/supabase");
 
 module.exports = async function handler(req, res) {
   const headers = corsHeaders(req.headers.origin);
@@ -26,33 +26,34 @@ module.exports = async function handler(req, res) {
       return;
     }
 
+    let draftsRemaining;
+    let email = user.email || null;
+
     if (!profile) {
-      const email = user.email || null;
-      const bonus = signupDraftsForUser(user);
       const { data: created, error: insertErr } = await admin
         .from("profiles")
-        .upsert({ id: user.id, email, drafts_balance: bonus }, { onConflict: "id" })
+        .upsert({ id: user.id, email, drafts_balance: 0 }, { onConflict: "id" })
         .select("drafts_balance, email")
         .single();
       if (insertErr) {
         res.status(500).json({ error: insertErr.message });
         return;
       }
-      await admin.from("draft_ledger").insert({
-        user_id: user.id,
-        delta: bonus,
-        reason: user.is_anonymous ? "anon_signup_bonus" : "signup_bonus",
-      });
-      res.status(200).json({
-        email: (created && created.email) || email,
-        draftsRemaining: (created && created.drafts_balance) != null ? created.drafts_balance : bonus,
-      });
-      return;
+      email = (created && created.email) || email;
+      draftsRemaining = (created && created.drafts_balance) != null ? created.drafts_balance : 0;
+    } else {
+      email = profile.email || email;
+      draftsRemaining = profile.drafts_balance != null ? profile.drafts_balance : 0;
+    }
+
+    const grant = await applyInstallGrant(admin, user, req);
+    if (grant.draftsRemaining != null) {
+      draftsRemaining = grant.draftsRemaining;
     }
 
     res.status(200).json({
-      email: profile.email || user.email || null,
-      draftsRemaining: profile.drafts_balance != null ? profile.drafts_balance : 0,
+      email,
+      draftsRemaining,
     });
   } catch (e) {
     res.status(e.status || 500).json({

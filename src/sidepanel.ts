@@ -1,6 +1,6 @@
 import { goalRankingText, type ChatTurn } from "./lib/claude";
-import { ApiError, createCheckout, fetchMe, streamGenerate } from "./lib/api";
-import { getCurrentUser, isAnonymousUser, ensureSession, signInWithGoogle } from "./lib/auth";
+import { ApiError, createCheckout, fetchMe, streamGenerate, signInWithGoogleAndClaim } from "./lib/api";
+import { getCurrentUser, isAnonymousUser, ensureSession } from "./lib/auth";
 import { BYOK_ENABLED, FREE_DRAFTS_ANONYMOUS } from "./lib/config";
 import type {
   RedditThread,
@@ -1035,11 +1035,15 @@ function init(): void {
     try {
       signInBtn.disabled = true;
       authModalGoogle.disabled = true;
-      await signInWithGoogle();
+      const { draftsRemaining: claimed, claimFailed } = await signInWithGoogleAndClaim();
       authModal.close();
       showToast("Signed in with Google");
       await refreshAccount(true);
-      if (draftsRemaining !== null) {
+      if (claimFailed) {
+        showToast("Signed in — could not move guest drafts");
+      } else if (claimed !== null) {
+        showToast(`${claimed} draft${claimed === 1 ? "" : "s"} remaining`);
+      } else if (draftsRemaining !== null) {
         showToast(`${draftsRemaining} draft${draftsRemaining === 1 ? "" : "s"} remaining`);
       }
     } catch (e) {

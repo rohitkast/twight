@@ -1,28 +1,63 @@
-# Reddit Reply Assistant
+# Twight
 
-A Chrome (MV3) extension that reads a Reddit post + comment thread from the page
-DOM, opens a side-panel chat, and uses the Claude API to draft tailored replies
-and DMs.
+Chrome extension (MV3) that reads a Reddit post and its comments, then drafts
+natural replies, comments, and DMs. Hosted generation (Gemini) is billed in
+**drafts** against a Supabase profile — not a user-pasted API key.
+
+Operator setup (SQL, Anonymous provider, redirect URLs, Vercel env) lives in
+[SETUP.md](SETUP.md).
+
+## What you get without Google
+
+Opening the side panel creates a **guest session** via Supabase **Anonymous**
+auth. That is a real user with no email — a `profiles` row is created at **0**,
+then the first guest on this Chrome install is credited **5 free drafts**
+(`install_grants`). Sign out creates a *new* anonymous user, but that user gets
+**0** on the same install. Reinstalling the extension (new `installId`) can get
+another 5.
+
+Generate works immediately for that first guest. Settings shows **Guest** and
+**x free drafts**. Sign in, Buy, Refresh, and Sign out stay hidden until they
+use Google (Sign in appears on the side panel when free drafts hit 0).
+
+## Google sign-in and linking
+
+**Sign in with Google** (`chrome.identity` → Supabase OAuth) is for more drafts,
+Polar checkout, and keeping an identity across devices. Google is asked to show
+the account picker (`prompt=select_account`) so you can pick a different Gmail
+than the one Chrome is already using.
+
+If they were a guest, leftover free drafts **move** onto the Google account
+(whatever is still on the guest profile, e.g. 4 after using 1), then **+5 once**
+(`anon_claims` + ledger `google_bonus`). Example: 4 leftover + 5 bonus = **9**,
+not 10. The same guest cannot be claimed twice. Google accounts that already
+received `signup_bonus` or `google_bonus` do not get another +5.
+
+Buy drafts requires Google (email). Guests cannot check out.
+
+## Other product notes
+
+- On an opened Reddit post, a chip can open the side panel and load the thread.
+- Generate does not require a playbook. With no goal, a **Who are you looking
+  for?** prompt can save a one-liner as a goal, skip (up to 10 items), or open
+  the full Goals page.
+- History and Chat List (saved DMs / follow-ups) stay in `chrome.storage.local`.
 
 ## Architecture
 
 ```
-content.ts      → runs on reddit.com, extracts post + comments from the DOM
-background.ts   → service worker, opens the side panel on icon click
-sidepanel.*     → chat UI; pulls the thread from the content script and calls Claude
-options.*       → stores your Anthropic API key in chrome.storage.local
-lib/claude.ts   → @anthropic-ai/sdk wrapper (model, system prompt, streaming)
+content.ts / reddit-chip.ts  → reddit.com: extract thread; post chip
+background.ts                → side panel on icon click or chip
+sidepanel.*                  → chat UI, guest session, generate stream
+options.*                    → account: Guest vs Google, buy (Google only)
+goals.*                      → playbooks (optional)
+api/                         → Vercel: /me, /generate, claim-anonymous, checkout
+supabase/schema.sql          → profiles, ledger, anon_claims, install_grants
 ```
 
-The side panel calls `api.anthropic.com` **directly** from the browser using the
-official SDK (`dangerouslyAllowBrowser: true`). Your API key lives only in this
-browser's extension storage. This is fine for personal use; do **not** publish
-this build, as the key would travel with the extension. (Swap `lib/claude.ts` to
-hit a backend proxy if you ever need to distribute it.)
-
-Model: `claude-sonnet-4-5` streamed into the chat.
-Thinking: disabled for compatibility with the default model.
-Context: sends a relevance-ranked subset of comments plus a compact rolling conversation summary.
+Draft generation hits `API_BASE_URL` (see `src/lib/config.ts`) with a Bearer
+token. The service worker must not be the only place a guest is created — the
+side panel calls `ensureSession()` then `/api/me`.
 
 ## Build
 
@@ -34,22 +69,16 @@ npm run watch        # rebuild on change
 
 ## Load in Chrome
 
-1. Visit `chrome://extensions`, enable **Developer mode**.
-2. **Load unpacked** → select the `dist/` folder.
-3. Click the extension's ⚙ (or its options page) and paste your Anthropic API key.
+1. `chrome://extensions` → Developer mode.
+2. **Load unpacked** → `dist/`.
+3. Open a Reddit post (or click the toolbar icon). Guest drafts appear without
+   Google if Anonymous sign-ins are enabled in Supabase.
 
-## Use
-
-1. Open a Reddit post.
-2. Click the extension icon to open the side panel.
-3. Click **Load thread from page**.
-4. Ask, e.g. *"Draft a reply to u/someuser"* or *"Write a DM inviting the OP to
-   collaborate."* (Ctrl/Cmd+Enter sends.)
+After source changes: `npm run build`, then reload the extension card.
 
 ## Notes
 
-- Reddit DOM extraction targets the current "shreddit" web-component layout
-  (`shreddit-post`, `shreddit-comment`) with a light fallback. If Reddit changes
-  its markup, update the selectors in `src/content.ts`.
-- After editing source, re-run `npm run build` and hit the reload icon on the
-  extension card in `chrome://extensions`.
+- Reddit extraction targets shreddit (`shreddit-post`, `shreddit-comment`) with
+  an old-Reddit fallback. Markup changes belong in `src/content.ts`.
+- Existing DB: do not re-run old `CREATE TABLE` for `profiles`. Use `ALTER` +
+  new functions/tables as described in [SETUP.md](SETUP.md).

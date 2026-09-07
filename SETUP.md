@@ -4,9 +4,13 @@
 
 1. Open Supabase → SQL Editor
 2. Paste and run the contents of `supabase/schema.sql`
-3. Confirm tables: `profiles`, `draft_ledger`, `polar_orders`
+3. Confirm tables: `profiles`, `draft_ledger`, `polar_orders`, `anon_claims`, `install_grants`
 
-Re-run `handle_new_user` from `schema.sql` after pulling guest-draft changes (anonymous users get **5** drafts; Google signups still get **10**).
+If the project already had Phase 1 tables, still re-run from `handle_new_user` through the end of `schema.sql` (guest **5 per install**, Google **0** until claim, claim + install RPCs).
+
+New guests get **5** drafts **once per Chrome install**, not once per Sign out. Sign out creates a new anonymous `auth.users` + `profiles` row, but `register_install_grant` credits +5 only for the first guest on that `installId`. Google sign-in moves leftover guest drafts and adds **+5 once**. Reinstall can mint another guest 5.
+
+**If Sign out still shows 5 free drafts**, the live DB is still giving 5 in `handle_new_user`. Re-run that function and `register_install_grant` from `schema.sql`, then deploy the API.
 
 ## 1b. Enable Anonymous sign-ins (required for generate without Google)
 
@@ -114,11 +118,11 @@ Chrome → `chrome://extensions` → Load unpacked → `dist/`
 
 ## 6. Smoke test
 
-1. Sign in with Google in the side panel
-2. Load a Reddit thread → Generate (should use 1 draft)
-3. Balance badge decrements
-4. Buy on `/pricing` (sign in with Google on the page first) or from the extension — checkout is tied to your account
-5. Return to side panel → balance +50
+1. Open the side panel on a Reddit post — you should be a **guest** with **5 free drafts** (no Google).
+2. Load a thread → Generate (uses 1 draft). Balance decrements. Sign in stays hidden until 0 drafts.
+3. Sign in with Google — leftover guest drafts move over (e.g. 4 left → **9**, not 10), **+5 once**. Settings shows your email; Buy / Sign out appear.
+4. Buy on `/pricing` or from the extension (Google only). Return to the side panel → balance +50.
+5. Google Sign out, then reopen the panel — same Chrome install should **not** get another 5 guest drafts.
 
 ## Polar note
 

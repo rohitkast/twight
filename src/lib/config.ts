@@ -8,7 +8,8 @@ export const SUPABASE_ANON_KEY =
 export const PRICING_URL = `${API_BASE_URL}/pricing`;
 
 export const FREE_DRAFTS_ANONYMOUS = 5;
-export const FREE_DRAFTS_ON_SIGNUP = 10;
+/** Added once when a guest account is claimed onto Google (not a second signup 10). */
+export const GOOGLE_SIGNIN_BONUS = 5;
 export const DRAFTS_PER_PACK = 50;
 export const PACK_PRICE_LABEL = "$5";
 

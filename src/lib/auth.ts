@@ -2,6 +2,7 @@ import { createClient, type Session, type SupabaseClient, type User } from "@sup
 import { SUPABASE_ANON_KEY, SUPABASE_URL } from "./config";
 
 const SESSION_KEY = "supabaseSession";
+const INSTALL_ID_KEY = "twightInstallId";
 
 /** Minimal fields we persist — chrome.storage JSON-clones these. */
 interface StoredSession {
@@ -154,6 +155,16 @@ export async function getAccessToken(): Promise<string | null> {
   return null;
 }
 
+export async function getInstallId(): Promise<string> {
+  const { [INSTALL_ID_KEY]: existing } = (await chrome.storage.local.get(INSTALL_ID_KEY)) as {
+    [INSTALL_ID_KEY]?: string;
+  };
+  if (typeof existing === "string" && existing.length >= 8) return existing;
+  const created = crypto.randomUUID();
+  await chrome.storage.local.set({ [INSTALL_ID_KEY]: created });
+  return created;
+}
+
 export async function getCurrentUser(): Promise<User | null> {
   const session = await getStoredSession();
   if (session?.user) return session.user;
@@ -164,7 +175,9 @@ export async function getCurrentUser(): Promise<User | null> {
 }
 
 export function isAnonymousUser(user: User | null | undefined): boolean {
-  return !!user?.is_anonymous;
+  if (!user) return false;
+  if (user.is_anonymous === true) return true;
+  return (user.identities || []).some((i) => i.provider === "anonymous");
 }
 
 let ensureInFlight: Promise<Session> | null = null;
@@ -213,11 +226,21 @@ async function signInAnonymously(): Promise<Session> {
  * Store ID:
  *   https://fpoaifndhjgaicoghecihpekgnhbiffb.chromiumapp.org/auth
  */
-export async function signInWithGoogle(): Promise<Session> {
+export async function signInWithGoogle(): Promise<{
+  session: Session;
+  previousAnonymousUserId: string | null;
+}> {
+  const previous = await getCurrentUser();
+  const previousAnonymousUserId = isAnonymousUser(previous) ? previous!.id : null;
+
   const redirectUrl = chrome.identity.getRedirectURL("auth");
   const authUrl = new URL(`${SUPABASE_URL}/auth/v1/authorize`);
   authUrl.searchParams.set("provider", "google");
   authUrl.searchParams.set("redirect_to", redirectUrl);
+  // Without this, Google reuses the Chrome profile account and never shows a picker.
+  authUrl.searchParams.set("prompt", "select_account");
+  // launchWebAuthFlow caches a completed redirect for the same URL; bust that.
+  authUrl.searchParams.set("nonce", crypto.randomUUID());
 
   const responseUrl = await new Promise<string>((resolve, reject) => {
     chrome.identity.launchWebAuthFlow(
@@ -249,7 +272,7 @@ export async function signInWithGoogle(): Promise<Session> {
   }
 
   await persistSession(data.session, refresh_token);
-  return data.session;
+  return { session: data.session, previousAnonymousUserId };
 }
 
 export async function signOut(): Promise<void> {
@@ -259,5 +282,6 @@ export async function signOut(): Promise<void> {
   } catch {
     // ignore
   }
+  // Do not remove twightInstallId — that is how a new guest is denied a second free 5.
   await chrome.storage.local.remove(SESSION_KEY);
 }
