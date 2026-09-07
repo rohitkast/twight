@@ -1,5 +1,5 @@
 import { ApiError, createCheckout, fetchMe } from "./lib/api";
-import { getCurrentUser, signInWithGoogle, signOut } from "./lib/auth";
+import { getCurrentUser, isAnonymousUser, signInWithGoogle, signOut } from "./lib/auth";
 
 const accountStatus = document.getElementById("account-status") as HTMLElement;
 const draftsStatus = document.getElementById("drafts-status") as HTMLElement;
@@ -42,6 +42,8 @@ async function refresh(opts?: { fromUserClick?: boolean }): Promise<void> {
 
   try {
     const user = await getCurrentUser();
+    const guest = isAnonymousUser(user);
+
     if (!user) {
       accountStatus.textContent = "Not signed in.";
       draftsStatus.textContent = "";
@@ -52,11 +54,19 @@ async function refresh(opts?: { fromUserClick?: boolean }): Promise<void> {
       return;
     }
 
-    accountStatus.textContent = `Signed in as ${user.email ?? "your account"}`;
-    signInBtn.classList.add("hidden");
-    signOutBtn.classList.remove("hidden");
-    buyBtn.classList.remove("hidden");
-    refreshBtn.classList.remove("hidden");
+    if (guest) {
+      accountStatus.textContent = "Guest";
+      signInBtn.classList.remove("hidden");
+      signOutBtn.classList.add("hidden");
+      buyBtn.classList.add("hidden");
+      refreshBtn.classList.add("hidden");
+    } else {
+      accountStatus.textContent = `Signed in as ${user.email || "your Google account"}`;
+      signInBtn.classList.add("hidden");
+      signOutBtn.classList.remove("hidden");
+      buyBtn.classList.remove("hidden");
+      refreshBtn.classList.remove("hidden");
+    }
 
     if (!fromClick) {
       draftsStatus.textContent = "Fetching balance…";
@@ -64,7 +74,10 @@ async function refresh(opts?: { fromUserClick?: boolean }): Promise<void> {
 
     try {
       const me = await fetchMe();
-      draftsStatus.textContent = `${me.draftsRemaining} draft${me.draftsRemaining === 1 ? "" : "s"} remaining`;
+      const n = me.draftsRemaining;
+      draftsStatus.textContent = guest
+        ? `${n} free draft${n === 1 ? "" : "s"}`
+        : `${n} draft${n === 1 ? "" : "s"} remaining`;
     } catch (e) {
       draftsStatus.textContent = e instanceof Error ? e.message : "Could not load draft balance";
     }
@@ -99,9 +112,8 @@ buyBtn.addEventListener("click", () => {
     try {
       // Intentional: confirm session before calling /api/checkout (avoids a slow 401 round-trip).
       const user = await getCurrentUser();
-      if (!user) {
-        setStatus("Sign in first.");
-        draftsStatus.textContent = "";
+      if (!user || isAnonymousUser(user)) {
+        setStatus("Sign in with Google to buy drafts.");
         return;
       }
 

@@ -1,6 +1,6 @@
 /** Public client config — safe to ship in the extension bundle. */
 
-export const API_BASE_URL = "http://localhost:3000";
+export const API_BASE_URL = "https://twight.vercel.app";
 export const SUPABASE_URL = "https://rcbnajyufootjbpncwxz.supabase.co";
 export const SUPABASE_ANON_KEY =
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJjYm5hanl1Zm9vdGpicG5jd3h6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU4MTYyMDUsImV4cCI6MjEwMTM5MjIwNX0.jC7yJrynfE2HiXUKHSLQV1eVF4ESUdQQIQEW593NdOA";

@@ -765,7 +765,9 @@ function init(): void {
   const moodBtns = Array.from(feedbackOverlay.querySelectorAll<HTMLButtonElement>(".mood-btn"));
   const draftsBadge = document.getElementById("drafts-badge") as HTMLButtonElement;
   const draftsMeterCount = document.getElementById("drafts-meter-count") as HTMLElement;
+  const draftsMeterFree = document.getElementById("drafts-meter-free") as HTMLElement;
   const draftsMeterFill = document.getElementById("drafts-meter-fill") as HTMLElement;
+  const draftsMeterBuy = document.getElementById("drafts-meter-buy") as HTMLElement;
   const signInBtn = document.getElementById("sign-in-btn") as HTMLButtonElement;
   const authModal = document.getElementById("auth-modal") as HTMLDialogElement;
   const authModalGoogle = document.getElementById("auth-modal-google") as HTMLButtonElement;
@@ -943,9 +945,15 @@ function init(): void {
   }
 
   function updateAuthUi(): void {
-    // Guests keep Sign in visible so they can upgrade later; Google users hide it.
-    signInBtn.classList.toggle("hidden", signedIn && !isAnonymous);
+    const outOfDrafts = signedIn && draftsRemaining !== null && draftsRemaining <= 0;
+    const showGuestSignIn = isAnonymous && outOfDrafts;
+    const showBuyOnMeter = signedIn && !isAnonymous && outOfDrafts;
+
+    signInBtn.classList.toggle("hidden", !showGuestSignIn);
     draftsBadge.classList.toggle("hidden", !signedIn);
+    draftsMeterFree.classList.toggle("hidden", !(isAnonymous && signedIn && draftsRemaining !== null && draftsRemaining > 0));
+    draftsMeterBuy.classList.toggle("hidden", !showBuyOnMeter);
+    draftsMeterBuy.setAttribute("aria-hidden", showBuyOnMeter ? "false" : "true");
 
     draftsBadge.classList.remove("low", "empty", "loading", "clickable");
 
@@ -957,7 +965,7 @@ function init(): void {
       draftsBadge.setAttribute("aria-valuenow", String(draftsRemaining));
       draftsBadge.setAttribute("aria-valuemax", String(max));
 
-      if (draftsRemaining <= 0) {
+      if (outOfDrafts) {
         draftsBadge.classList.add("empty", "clickable");
         draftsBadge.title = isAnonymous
           ? "No drafts left — sign in for more"
@@ -967,8 +975,10 @@ function init(): void {
           isAnonymous ? "No drafts left. Sign in for more" : "No drafts left. Buy drafts",
         );
       } else {
-        draftsBadge.title = `${draftsRemaining} of ${max} drafts remaining`;
-        draftsBadge.setAttribute("aria-label", `${draftsRemaining} drafts remaining`);
+        draftsBadge.title = isAnonymous
+          ? `${draftsRemaining} free draft${draftsRemaining === 1 ? "" : "s"} remaining`
+          : `${draftsRemaining} of ${max} drafts remaining`;
+        draftsBadge.setAttribute("aria-label", draftsBadge.title);
         if (draftsRemaining <= 2) draftsBadge.classList.add("low");
       }
     } else if (signedIn) {

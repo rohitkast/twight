@@ -76,7 +76,7 @@ body.rra-app {
   font: inherit;
   line-height: 1;
   transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
-  max-width: 7.5rem;
+  max-width: 9.5rem;
   flex-shrink: 0;
 }
 
@@ -114,13 +114,20 @@ body.rra-app {
   min-width: 1ch;
 }
 
+.drafts-meter-free {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--rra-muted);
+  letter-spacing: 0.01em;
+}
+
 .drafts-meter-track {
   position: relative;
   width: 52px;
   height: 6px;
   border-radius: 999px;
   background: var(--rra-border);
-  overflow: hidden;
+  overflow: visible;
   flex-shrink: 0;
 }
 
@@ -137,6 +144,8 @@ body.rra-app {
 .drafts-meter-ticks {
   position: absolute;
   inset: 0;
+  border-radius: inherit;
+  overflow: hidden;
   background: repeating-linear-gradient(
     90deg,
     transparent 0,
@@ -161,7 +170,12 @@ body.rra-app {
 }
 
 .drafts-meter-warn {
-  display: inline-flex;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1;
+  display: none;
   align-items: center;
   justify-content: center;
   width: 14px;
@@ -173,6 +187,7 @@ body.rra-app {
   font-weight: 800;
   line-height: 1;
   flex-shrink: 0;
+  box-shadow: 0 0 0 2px var(--rra-surface);
 }
 
 .drafts-meter-buy-label {
@@ -188,16 +203,12 @@ body.rra-app {
   padding: 5px 10px 5px 8px;
 }
 
-.drafts-meter.empty .drafts-meter-balance {
-  display: none;
-}
-
-.drafts-meter.empty .drafts-meter-buy {
+.drafts-meter.empty .drafts-meter-warn {
   display: inline-flex;
 }
 
-.drafts-meter:not(.empty) .drafts-meter-buy {
-  display: none;
+.drafts-meter.empty .drafts-meter-buy:not(.hidden) {
+  display: inline-flex;
 }
 
 .drafts-meter.loading .drafts-meter-fill {
