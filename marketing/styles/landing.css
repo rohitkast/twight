@@ -881,7 +881,7 @@ a:hover {
 .lp-tips-steps li {
   counter-increment: tip;
   display: grid;
-  grid-template-columns: 32px 1fr;
+  grid-template-columns: 32px minmax(0, 1fr);
   gap: 12px;
   align-items: start;
 }
@@ -907,6 +907,7 @@ a:hover {
 }
 
 .lp-tips-steps span {
+  display: block;
   font-size: 14px;
   color: #4b5563;
 }

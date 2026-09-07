@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Twight",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Draft natural Reddit replies with thread context. Goal-based writing, saved follow-ups.",
   "icons": {
     "16": "icons/icon-16.png",
